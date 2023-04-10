@@ -184,7 +184,7 @@ if __name__ == "__main__":
   output_args.add_argument("--ignore-dirty", action="store_true", help="Ignore dirty tree when saving run")
 
   training_args = parser.add_argument_group("Training options")
-  training_args.add_argument("-s", "--steps", help="Total timesteps to train for", type=int, default=500_000)
+  training_args.add_argument("-s", "--steps", help="Total timesteps to train for", type=int, default=250_000)
   training_args.add_argument("-l", "--episode-length", help="Episode timestep limit", type=int, default=DEFAULT_TIME_LIMIT)
   training_args.add_argument("--use-reduced-observation", help="Use only longitudinal state observations", action="store_true")
   

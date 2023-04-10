@@ -61,8 +61,8 @@ if __name__ == "__main__":
     os.remove("testgym_previous.py")
   except Exception as e:
     print(f"Error importing previous version of reward function: {e}")
-    from testgym import create_reward_func
-  from testgym import evaluate_model, LongitudinalStateWrapper, MultiManoeuvreWrapper
+    from pymxs_sbx_run import create_reward_func
+  from pymxs_sbx_run import evaluate_model, LongitudinalStateWrapper, MultiManoeuvreWrapper
 
   reward_func = create_reward_func(run_args)
 

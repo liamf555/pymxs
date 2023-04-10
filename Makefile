@@ -1,6 +1,6 @@
-activate:
-	conda activate mxs_windtunnel
-.PHONY: activate
+# activate:
+# 	conda activate mxs_windtunnel
+# .PHONY: activate
 
 plot: test_data/output.csv
 	python ../plot.py $<

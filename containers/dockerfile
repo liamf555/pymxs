@@ -1,0 +1,33 @@
+# Base image
+FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
+
+# Set working directory
+WORKDIR /app
+
+# Install git and python3-pip
+RUN apt update && apt install -y git python3-pip
+
+# Clone repository
+# RUN git clone <your_repository_url> /app
+
+# Install dependencies
+RUN pip3 install sbx-rl==0.5.0
+# RUN pip3 install "jax[cuda11_cudnn86]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+RUN pip3 install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+RUN pip3 install dm-control
+# RUN pip3 install
+
+# Copy files from local machine to the image
+COPY ./analysis_scripts /app/analysis_scripts
+COPY ./gym_mxs /app/gym_mxs
+COPY ./inertia /app/inertia
+COPY ./models /app/models
+COPY ./processing_scripts /app/processing_scripts
+COPY ./pyaerso /app/pyaerso
+COPY ./pymxs_sbx_run.py /app/pymxs_sbx_run.py
+
+RUN cd /app/gym_mxs && pip3 install -e . 
+
+# Set the entrypoint
+ENTRYPOINT ["python3", "/app/pymxs_sbx_run.py"]
+CMD []

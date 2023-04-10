@@ -11,6 +11,7 @@ import inspect, os, sys
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
+sys.path.insert(1, '/home/tu18537/dev/mxs/pymxs/')
 
 from analysis_scripts.big3 import c_l_curve, c_d_curve, c_lta, c_dta, x_t, S_w as Sw, S_t, c_w as cw
 from processing_scripts.utils.fits import poly_manifold, S

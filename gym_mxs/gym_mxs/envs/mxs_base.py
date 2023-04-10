@@ -1,7 +1,9 @@
 import gym
 from gym import spaces
+import sys
 
 import numpy as np
+sys.path.insert(1, '/home/tu18537/dev/mxs/pymxs/models')
 
 from pyaerso import AffectedBody, AeroBody, Body
 from gym_mxs.model import Combined, calc_state, inertia, trim_points
@@ -52,7 +54,7 @@ class MxsEnv(gym.Env):
         self.render_mode = render_mode
 
     def _get_obs(self):
-        return self.vehicle.statevector
+        return np.array(self.vehicle.statevector)
 
     def reset(self, seed=None, return_info=False, options=None):
         self.vehicle.statevector = [
@@ -87,7 +89,9 @@ class MxsEnv(gym.Env):
 
         reward, ep_done, self.reward_state = self.reward_func(observation, self.reward_state)
         self.steps += 1
-        done = ep_done or self.steps >= self.timestep_limit
+        # done = ep_done or self.steps >= self.timestep_limit
+        done = ep_done
+        # print(observation)
         return observation, reward, done, {}
 
     def render(self, mode):

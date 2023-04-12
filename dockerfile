@@ -12,10 +12,15 @@ RUN apt update && apt install -y git python3-pip
 
 # Install dependencies
 RUN pip3 install sbx-rl==0.5.0
+RUN pip3 install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 # RUN pip3 install "jax[cuda11_cudnn86]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-RUN pip3 install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# RUN pip3 install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 RUN pip3 install dm-control
+RUN pip3 install wandb
+RUN pip3 install tensorboard
 # RUN pip3 install
+
+ENV WANDB_API_KEY="ea17412f95c94dfcc41410f554ef62a1aff388ab"
 
 # Copy files from local machine to the image
 COPY ./analysis_scripts /app/analysis_scripts

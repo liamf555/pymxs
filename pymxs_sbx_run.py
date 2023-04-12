@@ -1,4 +1,7 @@
+import importlib
+import pprint
 import sys
+
 # sys.path.insert(1, '/home/rc13011/projects/mxs/pymxs/models')
 # sys.path.insert(1, '/home/tu18537/dev/mxs/pymxs/models')
 sys.path.insert(1, '/app/models')
@@ -12,9 +15,11 @@ from wandb.integration.sb3 import WandbCallback
 from contextlib import nullcontext
 
 # from stable_baselines3 import PPO as MlAlg
-from sbx import TQC as MlAlg
+from sbx import TQC, PPO, SAC, DroQ, DQN 
+import sbx
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.evaluation import evaluate_policy
 from dm_control.utils import rewards
 # from numba import jit
 
@@ -112,107 +117,105 @@ if __name__ == "__main__":
   output_args.add_argument("-d", "--directory", default="./runs", help="Destination for saving runs")
   output_args.add_argument("-o", "--output", action="store_true", help="Generate CSV for final output")
   output_args.add_argument("--plot", action="store_true", help="Show plots at end of training. (Will generate CSV as if -o specified)")
-  output_args.add_argument("--ignore-dirty", action="store_true", help="Ignore dirty tree when saving run")
-
+  output_args.add_argument("--eval", action="store_true", help="Evaluate model after training")
+  
   training_args = parser.add_argument_group("Training options")
-  training_args.add_argument("-s", "--steps", help="Total timesteps to train for", type=int, default=500_000)
+  training_args.add_argument("-s", "--steps", help="Total timesteps to train for", type=int, default=10_000)
   training_args.add_argument("-l", "--episode-length", help="Episode timestep limit", type=int, default=DEFAULT_TIME_LIMIT)
   training_args.add_argument("--use-reduced-observation", help="Use only longitudinal state observations", action="store_true")
+  training_args.add_argument("--algo", help="Algorithm to use", type=str, default="sac")
   
-  network_args = parser.add_argument_group("Network options")
-  network_args.add_argument("--depth", help="Number of layers in network", type=int, default=2)
-  network_args.add_argument("--width", help="Width of layers in network", type=int, default=64)
-
   reward_args = parser.add_argument_group("Reward function options")
-  reward_args.add_argument("-x", "--x-limit", help="x coordinate limit", type=float, default=DEFAULT_X_LIMIT)
-  reward_args.add_argument("-u", "--u-limit", help="u velocity limit", type=float, default=DEFAULT_U_LIMIT)
-  reward_args.add_argument("-c", "--climb-weight", help="Weight for climb cost", type=float, default=DEFAULT_CLIMB_WEIGHT)
-  reward_args.add_argument("-p", "--pitch-weight", help="Weight for pitch cost", type=float, default=DEFAULT_PITCH_WEIGHT)
-  reward_args.add_argument("-w", "--waypoint-weight", help="Weight for waypoints", type=float, default=0)
-  reward_args.add_argument("-f", "--waypoint-file", help="File for waypoints", default=0)
   reward_args.add_argument("-m", "--manoeuvre", help="Manoeuvre to use", type=str)
-  reward_args.add_argument("--multi-manoeuvre", help="Train for multiple manoeuvres at once", action="store_true")
 
-  args = parser.parse_args()
+  hyperparam_args = parser.add_argument_group("Hyperparam options")
+  hyperparam_args.add_argument("--gamma", help="Discount factor", type=float)
+  hyperparam_args.add_argument("--learning_rate", help="Learning rate", type=float)
+  hyperparam_args.add_argument("--batch_size", help="Batch size", type=int)
+  hyperparam_args.add_argument("--buffer_size", help="Buffer size", type=int)
+  hyperparam_args.add_argument("--tau", help="Soft update coefficient", type=float)
+  hyperparam_args.add_argument("--update-interval", help="Update interval", type=int)
+  hyperparam_args.add_argument("--top_quantiles_to_drop_per_net", help="Number of top quatiles to drop per net", type=int)
+  hyperparam_args.add_argument("--gradient_steps", help="Number of gradient steps", type=int)
+  hyperparam_args.add_argument("--qf_learning_rate", help="QF learning rate", type=float)
+  hyperparam_args.add_argument("--learning_starts", help="Learning starts", type=int)
+  hyperparam_args.add_argument("--dropout_rate", help="Dropout rate", type=float)
+  hyperparam_args.add_argument("--net_arch", help="Network architecture", type=str)
   
+  args, unknown = parser.parse_known_args()
+
+  hyperparam_args = {arg.dest: getattr(args, arg.dest) for arg in hyperparam_args._group_actions if getattr(args, arg.dest) is not None}
+
   if args.run_name is None:
     args.run_name = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
-  # Check if on clean commit
-  # diff_result = subprocess.run(["git", "diff", "-s", "--exit-code", "HEAD"])
-  # git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], encoding="UTF-8")
-  # git_sha = git_sha.strip()
-  # if diff_result.returncode == 0:
-  #   args.commit = git_sha
-  # else:
-  #   if args.ignore_dirty or not args.save:
-  #     args.commit = f"{git_sha}-dirty"
-  #   else:
-  #     print("Error: Current tree not committed.")
-  #     print("Prevent saving with --no-save, or explicitly ignore dirty tree with --ignore-dirty")
-  #     sys.exit(1)
+  if args.directory is not None:
+    if not os.path.exists(args.directory+"/wandb"):
+      os.makedirs(args.directory+"/wandb")
 
   wandb.init(
     project="pymxs",
     sync_tensorboard=True,
+    dir=args.directory,
     )
-
   reward_func = create_reward_func(args)
 
-  n_envs = 8
-  vec_env_cls = SubprocVecEnv
-  wandb.config.update({"n_envs": n_envs})
-
-  def make_env():
-    env = gym.make('gym_mxs/MXS-v0', reward_func=reward_func, timestep_limit=1000)
-    env= gym.wrappers.TimeLimit(env, max_episode_steps=1000)
-    if args.use_reduced_observation:
-      env = LongitudinalStateWrapper(env)
-    return env
-  
-
-
-  env = make_vec_env(lambda: make_env(), n_envs=n_envs,vec_env_cls=vec_env_cls)
-  # env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=SubprocVecEnv
+  env = gym.make('gym_mxs/MXS-v0', reward_func=reward_func, timestep_limit=1000)
+  env= gym.wrappers.TimeLimit(env, max_episode_steps=1000)
   if args.use_reduced_observation:
-    env = LongitudinalStateWrapper(env) # turn on
+    env = LongitudinalStateWrapper(env)
 
+  if args.gradient_steps:
+    hyperparam_args["policy_delay"] = int(args.gradient_steps)
 
-# not required 
-  # if args.multi_manoeuvre:
-  #   env = MultiManoeuvreWrapper(
-  #     env,
-  #     ["hover", "descent"],
-  #     create_reward_func,
-  #     args
-  #   )
-
-  net_arch = "small"
-  net_arch = {
+  # create dict of hyperparams from args
+  if args.net_arch:
+    net_arch = {
     "small": [64, 64],
     "medium": [256, 256],
     "large": [400, 300],
-  }[net_arch]
-  hyperparameter_defaults = {"learning_rate": 0.003}
-  policy_kwargs = dict(net_arch=net_arch)
-  print("policy_kwargs", policy_kwargs)
-  hyperparameter_defaults["policy_kwargs"] = policy_kwargs
+  }[args.net_arch]
+    policy_kwargs = dict(net_arch=net_arch)
+    hyperparam_args["policy_kwargs"] = policy_kwargs
+    
+  pprint.pprint(hyperparam_args)
+  
+  ## get aglorithm from args and create arlgorithm object
+  algorithm = args.algo
 
+  def get_alg(algorithm):
+    algos = {
+      "sac": SAC,
+      "tqc": TQC,
+      "ppo": PPO,
+      "droq": DroQ,
+      "dqn": DQN
+    }
+    return algos[algorithm]
+  
+  MlAlg = get_alg(algorithm)
+ 
+  run_dir = f"{args.directory}/{args.run_name}"
 
-  # layers = [args.width] * args.depth does not work with sbx
-  # net_arch = [dict(vf=layers, pi=layers)]
   # model = MlAlg("MlpPolicy", env, verbose=1, policy_kwargs=dict(net_arch=net_arch))
-  model = MlAlg("MlpPolicy", env, verbose=1, tensorboard_log=f"./runs/{args.run_name}/tensorboard/", **hyperparameter_defaults)
+  model = MlAlg("MlpPolicy", env, verbose=1, tensorboard_log=f"{run_dir}/tensorboard/")
   # model = MlAlg("MlpPolicy", env, verbose=1)
   model.learn(total_timesteps=args.steps, callback=WandbCallback())
   # model.learn(total_timesteps=args.steps)
 
-  run_dir = f"{args.directory}/{args.run_name}"
+  if args.eval:
+    mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
+    print(f"mean_reward:{mean_reward:.2f} +/- {std_reward}")
+    wandb.log({"eval_reward": mean_reward})
+  
   if args.save:
-    os.makedirs(run_dir)
+    # os.makedirs(run_dir, )
     model.save(f"{run_dir}/model.zip")
+    wandb.save(f"{run_dir}/model.zip")
     with open(f"{run_dir}/metadata.json", "w") as f:
       json.dump(vars(args), f, indent=2)
+    wandb.save(f"{run_dir}/metadata.json")
+    
 
   if args.output or args.plot:
     output_file = f"{run_dir}/output.csv"

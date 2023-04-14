@@ -72,6 +72,10 @@ def create_reward_func(args):
     return reward, False, None
 
   return prop_hang_func
+
+  def obstacle_avoidance_func(obs, reward_state):
+    pass
+   
  
 
 # TODO rewrite to use bult in SB methods

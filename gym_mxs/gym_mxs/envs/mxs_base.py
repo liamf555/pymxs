@@ -8,13 +8,15 @@ sys.path.insert(1, '/home/tu18537/dev/mxs/pymxs/models')
 from pyaerso import AffectedBody, AeroBody, Body
 from gym_mxs.model import Combined, calc_state, inertia, trim_points
 
+AIRCRAFT_HEIGHT = 270 #mm
+AIRCRAFT_LENGTH = 1000 #mm
 class MxsEnv(gym.Env):
     metadata = {
         "render_modes": ["ansi"],
         "render_fps": 4
     }
 
-    def __init__(self, render_mode=None, reward_func=lambda obs: 0.5, timestep_limit=100):
+    def __init__(self, render_mode=None, reward_func=lambda obs: 0.5, timestep_limit=100, scenario=None, **kwargs):
         self.observation_space = spaces.Box(
             low=np.float32(-np.inf),
             high=np.float32(np.inf),
@@ -52,6 +54,7 @@ class MxsEnv(gym.Env):
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
+        self.scenario = scenario
 
     def _get_obs(self):
         return np.array(self.vehicle.statevector)

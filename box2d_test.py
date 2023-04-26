@@ -118,6 +118,37 @@ def create_aircraft_and_obstacles():
     tail_plane_vertices = path_to_vertices(TAIL_PLANE_PATH)
     aircraft_vertices = fuselage_vertices + main_wing_vertices + tail_plane_vertices
     aircraft_vertices_flat = [coord for vertex in aircraft_vertices for coord in (vertex.x, vertex.y)]
+
+#     body_def = b2.b2BodyDef()
+#     body_def.position = b2.b2Vec2(0, middle_y )
+#     body_def.type = b2.b2_kinematicBody  # Set the body type to kinematic
+#     aircraft_body = world.CreateBody(body_def)
+
+# # Define the shape
+#     # shape = box2d.b2PolygonShape()
+#     # shape.SetAsBox(width, height)
+
+# # Create the fixture
+#     fixture_def = b2.b2FixtureDef()
+#     # fixture_def.shape = shape
+#     # fixture_def.density = density
+#     # fixture_def.friction = friction
+#     # fixture_def.restitution = restitution
+#     # fixture = aircraft_body.CreateFixture(fixture_def)
+
+    # triangles_indices = earcut.earcut(aircraft_vertices_flat)
+
+    # for i in range(0, len(triangles_indices), 3):
+    #     triangle_shape = b2.b2PolygonShape()
+    #     triangle_shape.vertices = [
+    #             aircraft_vertices[triangles_indices[i]],
+    #             aircraft_vertices[triangles_indices[i + 1]],
+    #             aircraft_vertices[triangles_indices[i + 2]],
+    #         ]
+        
+
+    #     # Create the fixture on the aircraft body inside the loop
+    #     aircraft_body.CreateFixture(shape=triangle_shape)
     
 
     aircraft_body_def = b2.b2BodyDef()
@@ -142,7 +173,7 @@ def create_aircraft_and_obstacles():
         # Create the fixture on the aircraft body inside the loop
         aircraft_body.CreateFixture(shape=triangle_shape)
 
-    # Create the aircraft body definition
+    # # Create the aircraft body definition
 
     aircraft_initial_y = aircraft_body.position.y
     
@@ -222,7 +253,7 @@ def reset_world():
     world = None
 
     # Create a new world
-    world = b2.b2World()
+    world = b2.b2World(gravity=(0, 0))
 
     # Create the aircraft and obstacles
     create_aircraft_and_obstacles()
@@ -263,8 +294,7 @@ contact_listener = ContactListener()
 
 create_aircraft_and_obstacles()
 world.contactListener = contact_listener
-ray_start = aircraft_body.position
-ray_end = ray_start + b2.b2Vec2(10, 0)  # Change the end point based on the LiDAR's range and direction
+(10, 0)  # Change the end point based on the LiDAR's range and direction
 
 reset_world()
 running = True
@@ -274,18 +304,23 @@ while running:
         if event.type == pygame.QUIT:
             running = False
             
-    new_vx = 5.0
-    new_vy = 0.0
+    new_X = 10
+    new_Y = 0.5
     new_w = 0.5
 
-    new_linear_velocity = b2.b2Vec2(new_vx, new_vy)  # Replace new_vx and new_vy with your calculated values
+
+    new_linear_velocity = b2.b2Vec2(new_X, new_Y)  # Replace new_vx and new_vy with your calculated values
     new_angular_velocity = new_w  # Replace new_w with your calculated angular velocity
 
     # Update the aircraft's linear and angular velocities
     aircraft_body.linearVelocity = new_linear_velocity
     aircraft_body.angularVelocity = new_angular_velocity
+    # aircraft_body.set_transform(new_X, new_Y, 0)
+    # aircraft_body.transform.position = b2.b2Vec2(new_X, new_Y)
+    # aircraft_body.transform.angle = new_angle
 
     pos = aircraft_body.position
+    print(pos)
 
     scroll = pos.x - WINDOW_WIDTH / SCALE / 5
 
@@ -295,10 +330,10 @@ while running:
     if contact_listener.collision_detected:
         print("Collision detected! Resetting the world...")
         reset_world()
+        new_X = 0
+        new_Y = middle_y
+        new_angle = 0
         contact_listener.collision_detected = False
-
-    ray_start = aircraft_body.position  # Update the ray_start variable inside the loop
-    ray_end = ray_start + b2.b2Vec2(10, 0)  # Change the end point based on the LiDAR's range and direction
 
     # Perform the ray cast
     update_lidar()

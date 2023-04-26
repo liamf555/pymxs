@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import sys
 
 import numpy as np
@@ -12,8 +12,8 @@ AIRCRAFT_HEIGHT = 270 #mm
 AIRCRAFT_LENGTH = 1000 #mm
 class MxsEnv(gym.Env):
     metadata = {
-        "render_modes": ["ansi"],
-        "render_fps": 4
+        "render_modes": ["ansi", "human"],
+        "render_fps": 4,
     }
 
     def __init__(self, render_mode=None, reward_func=lambda obs: 0.5, timestep_limit=100, scenario=None, **kwargs):
@@ -58,6 +58,7 @@ class MxsEnv(gym.Env):
 
     def _get_obs(self):
         return np.array(self.vehicle.statevector)
+    
 
     def reset(self, seed=None, return_info=False, options=None):
         self.vehicle.statevector = [

@@ -44,10 +44,14 @@ args= parser.parse_args()
 
 dir_path = args.dir_path
 json_path = dir_path / 'metadata.json'
+config_file = dir_path / "box_env_config.json"
 
 # load json file with parameters
 with open(json_path) as json_file:
     params = json.load(json_file)
+
+with open(config_file) as f:
+    env_config = json.load(f)
 
 metadata = Namespace(**params)
 
@@ -65,7 +69,10 @@ def get_alg(algorithm):
   
 MlAlg = get_alg(algorithm)
 
-env = gym.make(metadata.env, render_mode=args.render_mode)
+print(f"Config: {metadata}")
+print(f"Config: {env_config}")
+
+env = gym.make(metadata.env, training=False, config = env_config, render_mode=args.render_mode)
 
 model = MlAlg.load(dir_path / 'model.zip', env=env)
 
@@ -75,20 +82,23 @@ episode_rewards, episode_lengths = evaluate_policy(model, env, n_eval_episodes=1
 print(f"mean_reward:{np.mean(episode_rewards):.2f} +/- {np.std(episode_rewards)}")
 print(f"mean_length:{np.mean(episode_lengths):.2f} +/- {np.std(episode_lengths)}")
 
-# print(f"mean_reward:{mean_reward:.2f} +/- {std_reward}")
+# from stable_baselines3.common.vec_env import VecVideoRecorder, DummyVecEnv
 
+# video_folder = "logs/videos/"
+# video_length = 100
 
-# get algorithm
+# vec_env = DummyVecEnv([lambda: gym.make(metadata.env, training=False, render_mode= "rgb_array")])
 
-# output folders?
+# obs = vec_env.reset()
 
-# make env (vec?)
+# # Record the video starting at the first step
+# vec_env = VecVideoRecorder(vec_env, video_folder,
+#                        record_video_trigger=lambda x: x == 0, video_length=video_length,
+#                        name_prefix=f"trained-agent-{metadata.env}")
 
-
-
-# load model
-
-# eval policy
-
-# 
-
+# vec_env.reset()
+# for _ in range(video_length + 1):
+#   action = [vec_env.action_space.sample()]
+#   obs, _, _, _ = vec_env.step(action)
+# # Save the video
+# vec_env.close()

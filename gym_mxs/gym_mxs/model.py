@@ -3,6 +3,7 @@
 import math
 
 from numpy import mean, var
+import numpy as np
 
 import mxs_data
 
@@ -19,9 +20,10 @@ from processing_scripts.utils.fits import poly_manifold, S
 from pyaerso import AffectedBody, AeroBody, Body, Force, Torque
 
 
-def calc_state(alpha, airspeed, combined=True):
-    u = airspeed * math.cos(alpha)
-    w = airspeed * math.sin(alpha)
+def calc_state(alpha, airspeed, wind, combined=True):
+    # print(alpha, airspeed, wind)
+    u = airspeed * math.cos(alpha) - wind[0]
+    w = airspeed * math.sin(alpha) - wind[1]
     orientation = [0, math.sin(alpha/2), 0, math.cos(alpha/2)]
     if combined:
         return [
@@ -50,15 +52,15 @@ inertia = [
     [0.019, 0.0,   0.0],
     [0.0,   0.09, 0.0],
     [0.0,   0.0,   0.121]]
-position,velocity,attitude,rates = calc_state(
-    math.radians(trim_points[selected_trim_point][0]),
-    selected_trim_point,
-    False
-)
+# position,velocity,attitude,rates = calc_state(
+#     math.radians(trim_points[selected_trim_point][0]),
+#     selected_trim_point,
+#     False
+# )
 
 class WindModel:
     def get_wind(self,position):
-        return [0,0,0]
+        return [0, np.rando.uniform(-5,5), 0]
     def step(self,dt):
         pass
 
@@ -351,7 +353,7 @@ if __name__ == "__main__":
 
     # aerobody = AeroBody(body,WindModel(),("StandardDensity",[]))
     # aerobody = AeroBody(body)
-    aerobody = AeroBody(body,None,DensityModel())
+    aerobody = AeroBody(body,WindModel(),DensityModel())
 
     # vehicle = AffectedBody(aerobody,[Lift(),Drag(),Moment()])
     vehicle = AffectedBody(aerobody,[Combined(deltaT)])

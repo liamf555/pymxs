@@ -970,7 +970,7 @@ class ObstacleGeometry():
         # gap_height = random.uniform(MIN_GAP_HEIGHT, MAX_GAP_HEIGHT)
         # wall_gap_width = random.uniform(MIN_GAP_WIDTH, MAX_GAP_WIDTH)
         # gap_offset = random.uniform(MIN_GAP_OFFSET, MAX_GAP_OFFSET)
-        gap_height = max(0.4, random.normal(self.gap_height_params[0], self.gap_height_params[1]))
+        gap_height = max(0.3, random.normal(self.gap_height_params[0], self.gap_height_params[1]))
         wall_gap_width = max(0.1,random.normal(self.gap_width_params[0], self.gap_width_params[1]))
         # wall_gap_width = self.gap_width_params[0]
         gap_offset = random.normal(self.gap_offset_params[0], self.gap_offset_params[1])

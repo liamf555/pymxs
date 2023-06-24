@@ -1,10 +1,10 @@
 {
     "obstacles": {
         "max_wall_height": 75,
-        "n_obstacle_walls": 5,
+        "n_obstacle_walls": 8,
         "gap_height": [2, 0.1],
         "wall_distance": 30,
-        "gap_width": [2],
+        "gap_width": [2, 0.1],
         "first_wall_distance": 30,
         "gap_offset": [0, 5]
     },
@@ -27,7 +27,18 @@
     {
         "k1": 1.0,
         "penalisation": -5000
+    },
+    "domain": {
+        "steady": [
+            0,
+            0
+        ],
+        "dryden": "light",
+        "airspeed": [
+            15,
+            17.5,
+            20,
+            22.5
+        ]
     }
-
-
 }

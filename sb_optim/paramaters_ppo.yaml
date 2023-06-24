@@ -5,8 +5,9 @@ command:
   - ${env}
   - python3
   - ${program}
+  - "-d"
+  - "/user/work/tu18537/runs"
   - ${args}
-
 metric:
   name: rollout/ep_rew_mean
   goal: maximize
@@ -14,7 +15,13 @@ parameters:
   algo:
     value: "ppo"
   env:
-   value: "gym_mxs/MXSBox2DLidar-v0"
+    value: "gym_mxs/MXSBox2DLidar-v0"
+  dryden:
+    value: "None"
+  steady:
+    value: 0
+  airspeed:
+    value: 15
   clip_range:
     values: [0.1, 0.2, 0.3, 0.4]
   gamma:

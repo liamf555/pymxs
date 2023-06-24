@@ -188,7 +188,7 @@ if __name__ == "__main__":
   run_dir = f"{args.directory}/{args.run_name}"
 
   # model = MlAlg("MlpPolicy", env, verbose=1, policy_kwargs=dict(net_arch=net_arch))
-  model = MlAlg("MlpPolicy", env, verbose=1, tensorboard_log=f"{run_dir}/tensorboard/", **hyperparam_args)
+  model = MlAlg("MlpPolicy", env, verbose=0, tensorboard_log=f"{run_dir}/tensorboard/", **hyperparam_args)
   # model = MlAlg("MlpPolicy", env, verbose=1)
   model_save_freq = args.model_save_freq / args.frame_skip
   model.learn(total_timesteps=args.steps, callback=WandbCallback(model_save_path=run_dir, verbose=0, model_save_freq=model_save_freq))

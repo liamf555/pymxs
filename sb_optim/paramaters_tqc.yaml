@@ -1,10 +1,21 @@
 # for TQC
-program: pymxs_sbx_sweep.py
+program: pymxs_sbx_box_sweep.py
 method: bayes
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "-d"
+  - "/user/work/tu18537/runs"
+  - ${args}
 metric:
   name: rollout/ep_rew_mean
   goal: maximize
 parameters:
+  algo:
+    value: "tqc"
+  env:
+    value: "gym_mxs/MXSBox2DLidar-v0"
   gamma:
     values: [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999]
   learning_rate:

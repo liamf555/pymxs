@@ -24,64 +24,68 @@ from gym_mxs.model import Combined, calc_state, inertia, trim_points
 
 from scipy.spatial.transform import Rotation
 
-GEOM_SCALE = 16.187 /2
-INITIAL_WALL_OFFSET = 30 * GEOM_SCALE
-WINDOW_WIDTH = 800 * 1.5
-WINDOW_HEIGHT = 600 * 1.5
-SCALE = 2
-MIDDLE_Y = (WINDOW_HEIGHT / 2) / SCALE
+from dm_control.utils import rewards
 
-MAX_WALL_HEIGHT = 75 * GEOM_SCALE   # size of walls
-N_OBSTACLE_WALLS = 5 # number of walls in obstacle course
-MIN_GAP_HEIGHT = 1*(GEOM_SCALE)  # distance between wall halves
-MAX_GAP_HEIGHT =2*(GEOM_SCALE)
-MIN_WALL_DISTANCE = 30*GEOM_SCALE  # distance between walls
-MAX_WALL_DISTANCE = 30*GEOM_SCALE  # distance between walls
-MIN_GAP_WIDTH = 0.05*GEOM_SCALE   # width of walls 
-MAX_GAP_WIDTH = 2.0*GEOM_SCALE   
-MIN_FIRST_WALL_DISTANCE = 30*GEOM_SCALE # distance betwee(n plane and first wall
-MAX_FIRST_WALL_DISTANCE = 30 * GEOM_SCALE
-MIN_WALL_SPACING = 0  
-MIN_GAP_OFFSET = -15 * GEOM_SCALE
-MAX_GAP_OFFSET = 15  * GEOM_SCALE
-INITIAL_WALL_OFFSET = 30 * GEOM_SCALE
-MIDDLE_Y = (WINDOW_HEIGHT / 2) / SCALE
 
-TERMINAL_WALL_DISTANCE = 160 * GEOM_SCALE
+def multiply_dict_values(d, scalar, excluded_keys=None):
+    if excluded_keys is None:
+        excluded_keys = []
+    result = {}
+    for key, value in d.items():
+        if key not in excluded_keys:
+            if isinstance(value, list):
+                result[key] = [x * scalar for x in value]
+            else:
+                result[key] = value * scalar
+        else:
+            result[key] = value
+    return result
+
+# MIDDLE_Y = (WINDOW_HEIGHT / 2) / SCALE
+
+  # size of walls
 
 # LIDAR params
-N_LIDAR_RAYS = 10
-LIDAR_OFFSET_VECTOR = b2.b2Vec2(4, 0)
-LIDAR_RANGE = 95*GEOM_SCALE #approximate range of lidar in m
-LIDAR_FOV = 20
-ANGLE_INCREMENT = LIDAR_FOV / (N_LIDAR_RAYS - 1)
-
 #reward params
-K1 = 1.0
-K2 = 0.25
+
 PLANE_OUTLINE_PATH = "M -8.4344006,0.8833226 L -3.6174367,1.4545926 C -2.6957014,1.5861425 -1.2977255,1.7000225 -0.44895008,0.98453256 C 0.97534922,0.9358126 2.1554971,0.9295626 3.4694746,0.8473026 C 3.4694746,0.8473026 4.1040207,0.8167026 4.1204559,0.5018026 C 4.1306045,0.3072626 4.2764544,-1.2268074 1.7485665,-1.3031174 L 1.7604066,-1.0355474 L 1.3209316,-1.0233574 L 1.3822972,-1.7538274 C 1.9074643,-1.7412074 2.0141441,-2.5891474 1.4111688,-2.6446878 C 0.80819248,-2.7002378 0.8023354,-1.8387774 1.1839183,-1.7720774 L 1.0908357,-1.0522274 L -5.2189818,-0.91913738 L -12.198397,-0.80283738 C -12.198397,-0.80283738 -12.820582,-0.84082738 -12.643322,-0.31380735 C -12.466063,0.2132026 -11.622877,3.1026526 -11.622877,3.1026526 L -10.120232,3.1500026 C -10.120232,3.1500026 -9.8463164,3.1552526 -9.6753635,2.8748926 C -9.5044154,2.5944926 -8.4343678,0.8834126 -8.4343678,0.8834126 Z"
 MAIN_WING_PATH="M 0.32346345,0.1815526 C 1.8962199,0.1638926 1.9691414,-0.33848735 0.34369001,-0.39724735 C -2.0368286,-0.46197735 -3.4920188,-0.15280735 -3.3975903,-0.13907735 C -1.5720135,0.1264326 -0.81500941,0.1943226 0.32346345,0.1815526 Z"
 TAIL_PLANE_PATH="M -8.9838929,0.4470726 C -7.9395132,0.4475726 -7.8954225,0.0758826 -8.975461,0.01829265 C -10.557021,-0.05024735 -11.520801,0.1663226 -11.457966,0.1773326 C -10.24323,0.3898926 -9.739887,0.4467426 -8.9838897,0.4471126 Z"
 
 
-
-AIRCRAFT_ALT = 25 * GEOM_SCALE
-
-N_LIDAR_RAYS = 10
-
-BLOCK_WIDTH = 5 * GEOM_SCALE
-BLOCK_HEIGHT = 10 * GEOM_SCALE
-BLOCK_SEPARATION = 10 * GEOM_SCALE
-
 class MxsEnvBox2DLand(MxsEnv):
-    def __init__(self, render_mode, training, use_lidar=False, **kwargs):
+    def __init__(self, render_mode, training, use_lidar=True, acl = False, context = np.array([0.,0.,0.]), config=None, output_dir=None):
         self.render_mode = render_mode
-        super().__init__(render_mode= render_mode,**kwargs)
+        super().__init__(render_mode= render_mode)
 
-        self.geom_scale = GEOM_SCALE
+        self.acl_on = acl
+
+        self.config = config
+
+        self.obstacle_config = self.config['obstacles']
+        self.geom_scale = self.config['geometry']['geom_scale']
+        self.obstacle_config = multiply_dict_values(self.obstacle_config, self.geom_scale, excluded_keys=[])
+        print(self.obstacle_config)
+        self.lidar_config = self.config["lidars"]
+        self.aircraft_alt = self.config['geometry']['aircraft_alt'] * self.geom_scale
+
+        if self.acl_on:
+            self.context = context
+
+        self.window_dims = (
+            self.config["rendering"]["window_width"],
+            self.config["rendering"]["window_height"],
+        )
+        self.scale = self.config["rendering"]["scale"]
+
+        self.middle_y = (self.window_dims[1] / 2) / self.scale
         
         self.steps = 0
         self.training = training
+
+        if not self.training:
+            self.first_render = True
+            self.episode_counter = 1
 
         self.controls_high = np.array([np.radians(60), 1])
         self.controls_low = np.array([np.radians(-60), 0])
@@ -91,13 +95,16 @@ class MxsEnvBox2DLand(MxsEnv):
         self.alt_counter = 0
         self.speed_counter = 0
         self.pitch_counter = 0
+        self.position_counter = 0
 
         self.reward_state = None
 
         self.use_lidar = use_lidar
 
+        self.n_lidar_rays = self.config["lidars"]["n_lidar_rays"]
+
         if self.use_lidar is True:
-            n_obs = 8 + N_LIDAR_RAYS
+            n_obs = 8 + self.n_lidar_rays
         else:
             n_obs = 11
 
@@ -106,9 +113,7 @@ class MxsEnvBox2DLand(MxsEnv):
         # self.scenario = scenario
 
         self.paused = False
-        self.n_lidar_rays = N_LIDAR_RAYS
-
-        self.old_obs_shape = self.observation_space.shape[0]
+        
 
         # create bx2d world 
     
@@ -126,12 +131,13 @@ class MxsEnvBox2DLand(MxsEnv):
         # print(f"action space: {self.action_space}")
         # breakpoint()
 
-        self.initial_ac_pos = (0, (WINDOW_HEIGHT / 2) / SCALE)
+        self.initial_ac_pos = (0, (self.window_dims[1] / 2) / self.scale)
         self.render_screen = None
         self.clock = None
         self.x_pos_prev = 0
         self.last_obstacle_x = 0
         self.termination = False
+        self.n_episodes = 0
 
 
     
@@ -139,7 +145,7 @@ class MxsEnvBox2DLand(MxsEnv):
         # obs = self.long_obs(obs)
 
         position = (self.aircraft.position - self.initial_ac_pos) / self.geom_scale
-        position = (position[0], position[1] + AIRCRAFT_ALT/GEOM_SCALE)
+        position = (position[0], position[1] + self.aircraft_alt / self.geom_scale)
         # print(f"Position: {position}")
         velocity = self.aircraft.linear_velocity / self.geom_scale
         angle = self.aircraft.angle
@@ -174,10 +180,6 @@ class MxsEnvBox2DLand(MxsEnv):
         pitch_degrees = math.degrees(pitch)
         obstacle_centre_x = obs[6]
         
-
-
-
-
 
         # print(f"Pitch: {pitch_degrees}")
         # print(f"Velocity: {np.sqrt(u_vel**2 + w_vel**2)}")
@@ -225,7 +227,7 @@ class MxsEnvBox2DLand(MxsEnv):
             reward = -1000
             self.termination = True
             self.speed_counter += 1
-        if abs(alt) > (AIRCRAFT_ALT/GEOM_SCALE) + 10 or x_pos > (self.get_gap_position() + 10):
+        if abs(alt) > (self.aircraft_alt /self.geom_scale) + 10 or x_pos > (self.get_gap_position() + 10):
             # print("Too high")
             reward = -1000
             self.termination = True
@@ -241,6 +243,131 @@ class MxsEnvBox2DLand(MxsEnv):
             wandb.log({"Speed counter": self.speed_counter})
             wandb.log({"Position counter": self.alt_counter})
             wandb.log({"Completion counter": self.completion_counter})
+        # if reward < 0:
+            # print(obs)
+            # # print(f"altitude: {alt}")
+            # # print(f"alt error: {desired_alt - alt}")
+            # print(f" x pos: {x_pos}")
+            # print(f" x pos prev: {x_pos_prev}")
+            # print(f"reward: {reward}")
+            # print(f"rw_1: {rw_1}")
+            # print(f"rw2: {rw2}")
+        
+        return reward
+    
+    def obstacle_avoid_box2d_shaped(self, obs):
+        # x, z, u, w, pitch, pitch_rate, gap_pos, gap_height, gap_width, elevator, throttle
+
+        x_pos = obs[0]
+        alt = obs[1]
+        # print(f"Alt: {alt}")
+        u_vel = obs[2]
+        w_vel = obs[3]
+        pitch = self.aircraft.angle
+        pitch_degrees = math.degrees(pitch)
+        pitch_rate = np.degrees(obs[5])
+        obstacle_centre_x = self.calc_gap_position_delta()
+        gap_width = self.gap_width
+
+        pitch_error_degrees = abs(pitch_degrees)  
+        alt_error = abs(alt) 
+        x_error = obstacle_centre_x  
+        velocity_error = np.sqrt(u_vel**2 + w_vel**2)
+
+        # print(f"obstacle_centre_x: {obstacle_centre_x}")
+        # print(f"alt_error: {alt_error}")
+        # print(f"velocity_error: {velocity_error}")
+        # print(f"x_error: {x_error}")
+        # print(f"pitch_error_degrees: {pitch_error_degrees}")
+
+        # print(f"Pitch error: {pitch_error_degrees}")
+        # print(f"Alt error: {alt_error}")
+
+        # print(f"X error: {obstacle_centre_x}")
+        # print(f"Velocity error: {velocity_error}")
+        # print(obstacle_centre_x)
+        # print(alt_error)
+        reward = 0
+        shaping = (
+            - 100 * np.sqrt(obstacle_centre_x**2  + alt_error**2)
+            - 10 * velocity_error
+        )
+
+        if self.prev_shaping is not None:
+            reward = shaping - self.prev_shaping
+        self.prev_shaping = shaping
+
+        gap_min = self.gap_centre_x - self.gap_width / 2
+        gap_max = self.gap_centre_x + self.gap_width / 2
+        final_reward = 0
+
+        pos_r = 0
+        vel_r = 0
+        pitch_r = 0
+
+        # minimise throttle? or maybe time? 
+        if alt < 0.1:
+            self.termination = True
+            reward = -5000
+            if (gap_min < x_pos < gap_max):
+                # print("Success")
+                self.completion_counter += 1
+                self.success = True
+            
+                pos_r = rewards.tolerance(x_error, bounds=(0, 0.5), margin=2)
+                vel_r = rewards.tolerance(velocity_error, bounds=(0, 2.5), margin=20)
+                pitch_r = rewards.tolerance(pitch_error_degrees, bounds=(0, 5), margin=90)
+                # alt_r = rewards.tolerance(alt_error, bounds=(0, 1), margin=10)
+
+                reward = (pos_r * vel_r * pitch_r) * 10000
+                final_reward = reward
+
+        if self.game_over():
+            # print("Hit wall")
+            reward = - 5000
+            self.termination = True
+            self.wall_counter += 1
+
+        if abs(pitch_degrees) > 180:
+            # print("Too pitchy")
+            reward = -5000
+            self.termination = True
+            self.pitch_counter += 1
+        # print(f"Reward {reward}")
+        if u_vel > 24.5:
+            # print("Too fast")
+            reward = -5000
+            self.termination = True
+            self.speed_counter += 1
+        if alt > (self.aircraft_alt /self.geom_scale) + 25:
+            # print("Too high or too far")
+            reward = -5000
+            self.termination = True
+            self.alt_counter += 1
+        if x_pos > (self.get_gap_position() + 25):
+            # print("Too far")
+            reward = -5000
+            self.termination = True
+            self.position_counter += 1
+
+        if self.termination and self.training:
+            # print(pitch_degrees)
+            wandb.log({"Terminal position": x_pos})
+            wandb.log({"Terminal velocity": velocity_error})
+            wandb.log({"Terminal pitch": pitch_degrees})
+            wandb.log({"Terminal distance to centre": x_error})
+            wandb.log({"Wall counter": self.wall_counter})
+            wandb.log({"Pitch counter": self.pitch_counter})
+            wandb.log({"Speed counter": self.speed_counter})
+            wandb.log({"Alt counter": self.alt_counter})
+            wandb.log({"Position counter": self.position_counter})
+            wandb.log({"Completion counter": self.completion_counter})
+            wandb.log({"Final reward": final_reward})
+            wandb.log({"Position reward": pos_r})
+            wandb.log({"Velocity reward": vel_r})
+            wandb.log({"Pitch reward": pitch_r})
+
+           
         # if reward < 0:
             # print(obs)
             # # print(f"altitude: {alt}")
@@ -273,13 +400,13 @@ class MxsEnvBox2DLand(MxsEnv):
                     end_screen = self.world_to_screen(lidar.p2)
                     pygame.draw.line(self.render_screen, (255, 0, 0), start_screen, end_screen, 1)
         # draw floor bwtweeen blocks
-        gap_centre_x = self.get_gap_position() * GEOM_SCALE
-        gap_width = self.get_gap_width() * GEOM_SCALE
+        gap_centre_x = self.get_gap_position() * self.geom_scale
+        gap_width = self.get_gap_width() * self.geom_scale
         # get floor of world by using airctaft starting alt
-        floor_y = -10*GEOM_SCALE
+        floor_y = -10*self.geom_scale
 
         floor_position_screen = self.world_to_screen([gap_centre_x - gap_width / 2, floor_y])
-        pygame.draw.line(self.render_screen, (0, 255, 0), floor_position_screen, (floor_position_screen[0] + gap_width * GEOM_SCALE, floor_position_screen[1]), 1)
+        pygame.draw.line(self.render_screen, (0, 255, 0), floor_position_screen, (floor_position_screen[0] + gap_width * self.geom_scale, floor_position_screen[1]), 1)
 
         # else:
         #     if self.wall_i < len(self.wall_positions):
@@ -294,7 +421,7 @@ class MxsEnvBox2DLand(MxsEnv):
     
     def calc_gap_position_delta(self):
         """ A function to calculate the position delta between the aircraft and the next obstacle """
-        aircraft_position = self.aircraft.position/GEOM_SCALE 
+        aircraft_position = self.aircraft.position/self.geom_scale 
         gap_position = self.get_gap_position()
         # print(f"Wall position: {next_obstacle_position}")
         delta_x = gap_position - aircraft_position[0]
@@ -320,12 +447,14 @@ class MxsEnvBox2DLand(MxsEnv):
     
     def create_aircraft_and_obstacles(self):
         self.aircraft = MXSGeometry(self.world, initial_position=self.initial_ac_pos, initial_angle=self.aircraft_initial_angle, initial_velocity=self.aircraft_initial_velocity)
-        self.obstacle_geom = ObstacleGeometry(self.world, initial_position=self.initial_ac_pos)
+        self.obstacle_geom = ObstacleGeometry(self.world, initial_position=self.initial_ac_pos, obstacle_config=self.obstacle_config, geom_scale=self.geom_scale, initial_alt=self.config['geometry']['aircraft_alt'])
         # self.last_obstacle_x = self.obstacle_geom.last_wall_x
         # print(f"Wall positions: {obstacle_geom.wall_positions}")
         # print(f"Wall heights: {obstacle_geom.wall_heights}")
         # print(f"Wall widths: {obstacle_geom.wall_widths}")
         # self.wall_positions = self.obstacle_geom.wall_positions
+        self.gap_centre_x = self.obstacle_geom.gap_position
+        self.gap_width = self.obstacle_geom.gap_width
         # self.wall_heights = self.obstacle_geom.wall_heights
         # self.wall_widths = self.obstacle_geom.wall_widths
         # self.x_pos_prev = 0
@@ -362,11 +491,10 @@ class MxsEnvBox2DLand(MxsEnv):
         self.reset_world()
         observation = self._get_full_obs(observation)
 
-        
-
         self.steps = 0
         self.reward_state = None
         self.scroll_offset = 0
+        self.prev_shaping = None
 
         
         self.termination = False
@@ -376,7 +504,7 @@ class MxsEnvBox2DLand(MxsEnv):
 
         if self.render_mode == "human":
             self._render_frame()
-        return (observation,info) if return_info else observation
+        return (observation,info) if not return_info else observation
  
     def step(self, action):
         # print(f"action: {action}")
@@ -391,8 +519,6 @@ class MxsEnvBox2DLand(MxsEnv):
         self.elevator = np.clip(self.elevator + controls[0] * self.dT, np.radians(-30), np.radians(30))
         self.throttle = controls[1]
 
-       
-        
         self.vehicle.step(self.dT,[0,self.elevator,self.throttle,0])
         #get observation from mxs
         observation = self._get_obs()
@@ -420,6 +546,9 @@ class MxsEnvBox2DLand(MxsEnv):
         # print(f"box2d vel: {self.aircraft.linear_velocity}")
         # print(linear_velocities[0]/GEOM_SCALE)
         self.pitch = math.degrees(self.get_pitch(*observation[6:10]))
+        if abs(np.degrees(self.aircraft.angle)) > 360:
+            print(f"pitch: {np.degrees(self.aircraft.angle)}")
+            print(f"pitch 2 {self.pitch}")
 
         if self.use_lidar:
             self.update_lidar()
@@ -427,26 +556,30 @@ class MxsEnvBox2DLand(MxsEnv):
         observation = self._get_full_obs(observation)
         # print(f"observation: {observation}")
 
-        reward = self.obstacle_avoid_box2d(observation)
+        reward = self.obstacle_avoid_box2d_shaped(observation)
         # print(f"reward: {reward}")
         self.steps += 1
         # done = ep_done or self.steps >= self.timestep_limit
         done = self.termination 
 
-        if self.aircraft.position.x * SCALE > WINDOW_WIDTH / 2:
-            self.scroll_offset = self.aircraft.position.x * SCALE - WINDOW_WIDTH / 2
+        if self.aircraft.position.x * self.scale > self.window_dims[0] / 2:
+            self.scroll_offset = self.aircraft.position.x * self.scale - self.window_dims[0] / 2
 
         if self.render_mode == "human":
             self._render_frame()
         # print(observation)
-        return observation, reward, done, False, {}
+        if GYM_FLAG:
+            info = {"success": self.success}
+            return observation, reward, done, info
+        else:
+            return observation, reward, done, False, {}
     
     def get_velocity(self, state):
         """ Returns the u and w velocities and q angular velocity
         of the aircraft, based on whether the env has standard or longitunda only
         observation space."""
         # print(f"Linear vel: {state[3]*GEOM_SCALE}, {state[5]*ef}")
-        return (state[3]*GEOM_SCALE, state[5]*GEOM_SCALE), state[11]
+        return (state[3]*self.geom_scale, state[5]*self.geom_scale), state[11]
         
     def action_mapper(self, action, input_low, input_high, output_low, output_high):
     
@@ -455,7 +588,7 @@ class MxsEnvBox2DLand(MxsEnv):
     def update_lidar(self):
         pos = self.aircraft.position
         angle = self.aircraft.angle
-        offset_vector = b2.b2Vec2(LIDAR_OFFSET_VECTOR)  # Define the offset vector for the front of the aircraft
+        offset_vector = b2.b2Vec2(self.lidar_config["lidar_offset_vector"])  # Define the offset vector for the front of the aircraft
 
         # Rotate the offset vector according to the body's angle
         rotated_offset_vector = b2.b2Vec2(
@@ -466,7 +599,7 @@ class MxsEnvBox2DLand(MxsEnv):
         # Calculate the starting point of the lidar beams
         lidar_start_point = pos + rotated_offset_vector
 
-        for i in range(N_LIDAR_RAYS):
+        for i in range(self.n_lidar_rays):
             self.lidars[i].fraction = 1.0
             angle_offset = (0.5 * i / 10.0) - 5.0  # Adjust the starting angle of the lidar beams
             # angle_offset = (1 * i / N_LIDAR_RAYS) - 5.25
@@ -476,8 +609,8 @@ class MxsEnvBox2DLand(MxsEnv):
 
             self.lidars[i].p1 = lidar_start_point
             self.lidars[i].p2 = (
-                pos[0] + math.sin(start_angle) * LIDAR_RANGE,
-                pos[1] - math.cos(start_angle) * LIDAR_RANGE,
+                pos[0] + math.sin(start_angle) * self.lidar_config["lidar_range"] * self.geom_scale,
+                pos[1] - math.cos(start_angle) * self.lidar_config["lidar_range"] * self.geom_scale,
             )
             self.world.RayCast(self.lidars[i], self.lidars[i].p1, self.lidars[i].p2)
     
@@ -530,7 +663,7 @@ class MxsEnvBox2DLand(MxsEnv):
                     self.fraction = fraction
                     return fraction
 
-        self.lidars = [LidarCallback() for _ in range(N_LIDAR_RAYS)]
+        self.lidars = [LidarCallback() for _ in range(self.n_lidar_rays)]
         self.update_lidar()
 
 
@@ -557,13 +690,13 @@ class MxsEnvBox2DLand(MxsEnv):
             pygame.init()
             self.scroll = 0
             self.scroll_offset = 0
-            self.render_screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 0, 32)
+            self.render_screen = pygame.display.set_mode((self.window_dims[0], self.window_dims[1]), 0, 32)
             pygame.display.set_caption("Box2D World Rendering")
             
             self.surf = pygame.Surface(
-                (WINDOW_HEIGHT + max(0.0, self.scroll) * SCALE, WINDOW_WIDTH)
+                (self.window_dims[1] + max(0.0, self.scroll) * self.scale, self.window_dims[0])
                 )
-            pygame.transform.scale(self.surf, (SCALE, SCALE))
+            pygame.transform.scale(self.surf, (self.scale, self.scale))
         # self.clock = pygame.time.Clock()
         
         if self.clock is None and self.render_mode == "human":
@@ -571,7 +704,7 @@ class MxsEnvBox2DLand(MxsEnv):
 
         pos = self.aircraft.position
         # print(f"{pos.x} {pos.y}")
-        self.scroll = pos.x - WINDOW_WIDTH / SCALE / 5
+        self.scroll = pos.x - self.window_dims[0] / self.scale / 5
         self.render_screen.fill((135, 206, 235))
     # Draw the world first
         self.draw_world()
@@ -609,20 +742,20 @@ class MxsEnvBox2DLand(MxsEnv):
         return pitch
     
     def draw_polygon(self, polygon, body, color):
-        vertices = [(body.transform * v) * SCALE for v in polygon.vertices]
-        vertices = [(v[0] - self.scroll_offset, WINDOW_HEIGHT - v[1]) for v in vertices]
+        vertices = [(body.transform * v) * self.scale for v in polygon.vertices]
+        vertices = [(v[0] - self.scroll_offset, self.window_dims[1] - v[1]) for v in vertices]
         pygame.draw.polygon(self.render_screen, color, vertices)
 
     def world_to_screen(self, world_point):
-        screen_x = int(world_point[0] * SCALE - self.scroll_offset)
-        screen_y = int(WINDOW_HEIGHT - world_point[1] * SCALE)
+        screen_x = int(world_point[0] * self.scale - self.scroll_offset)
+        screen_y = int(self.window_dims[1] - world_point[1] * self.scale)
         return (screen_x, screen_y)
     
     def draw_message(self, message):
         font = pygame.font.Font(None, 64)  # You can adjust the font size (64 in this case) as needed
         text_surface = font.render(message, True, (0, 0, 0))  # You can change the color (red in this case)
         text_rect = text_surface.get_rect()
-        text_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+        text_rect.center = (self.window_dims[0] // 2, self.window_dims[1] // 2)
         self.render_screen.blit(text_surface, text_rect)
         pygame.display.flip()
         
@@ -671,6 +804,15 @@ class MXSGeometry():
         self.aircraft_body.linearVelocity = linear_velocity
         self.aircraft_body.angularVelocity = angular_velocity
 
+    def lowest_point(self):
+        low_point = self.fuslelage_vertices[0]
+        for vertex_group in [self.fuselage_vertices, self.main_wing_vertices, self.tail_plane_vertices]:
+            for vertex in vertex_group:
+                if vertex.y > low_point.y:
+                    low_point = vertex
+
+        return low_point
+    
     @property
     def position(self):
         return self.aircraft_body.position
@@ -687,10 +829,6 @@ class MXSGeometry():
     def angular_velocity(self):
         return self.aircraft_body.angularVelocity
     
-    @property
-    def angle(self):
-        return self.aircraft_body.angle
-
 
     @linear_velocity.setter
     def linear_velocity(self, linear_velocity):
@@ -716,7 +854,7 @@ class MXSGeometry():
 
         aircraft_body_def = b2.b2BodyDef()
         aircraft_body_def.type = b2.b2_dynamicBody
-        aircraft_body_def.position = b2.b2Vec2(0, MIDDLE_Y )
+        aircraft_body_def.position = b2.b2Vec2(0, initial_position[1] )
         aircraft_body_def.angle = initial_angle
         aircraft_body_def.linearVelocity = initial_velocity
         aircraft_body_def.linear_damping = 0.0
@@ -737,40 +875,50 @@ class MXSGeometry():
 
             # Create the fixture on the aircraft body inside the loop
             self.aircraft_body.CreateFixture(shape=triangle_shape)
+
 class ObstacleGeometry():
     """A class to store and process the geometry of the obstacles"""
 
-    def __init__(self, world=None, render_mode="human", initial_position=(0, 0)):
+    def __init__(self, world=None, render_mode="human", initial_position=(0, 0),  obstacle_config=None, geom_scale=1, initial_alt=0):
         self.world = world
-        self.initial_ac_pos = MIDDLE_Y
+        self.initial_ac_pos = initial_position
         self._gap_position = 0
         self._wall_height = 0
         self._gap_width = 0
+        self.geom_scale = geom_scale
+        self.block_config = obstacle_config
+        self.aircraft_initial_alt = initial_alt * geom_scale
         self.create_obstacles()
+        
        
     def create_obstacles(self):
         # cumulative_wall_positions, first_wall_distance = self.define_placement()
+        height = random.uniform(self.block_config['block_height'][0], self.block_config['block_height'][1])
+        separation = random.uniform(self.block_config['block_separation'][0],self.block_config['block_separation'][1])
         for i in range(2):
-            self.create_wall(i)
+            self.create_wall(i, height, separation)
     
-    def create_wall(self, i):
+    def create_wall(self, i, landing_block_height, block_separation):
 
-        landing_block_width = BLOCK_WIDTH
-        landing_block_height = (BLOCK_HEIGHT)
-        landing_block_y = self.initial_ac_pos - AIRCRAFT_ALT + landing_block_height / 2
-        block_separation = BLOCK_SEPARATION
+        landing_block_width = self.block_config['block_width']
+        # landing_block_height = self.block_config['block_height']
+        
+        landing_block_y = self.initial_ac_pos[1] - self.aircraft_initial_alt + landing_block_height / 2
+        # block_separation = self.block_config['block_separation']
+        
+        initial_wall_offset = self.block_config['initial_wall_offset']
 
         block_body_def = b2.b2BodyDef()
         block_body_def.type = b2.b2_staticBody
-        block_body_def.position = b2.b2Vec2(INITIAL_WALL_OFFSET + (i * (block_separation + landing_block_width)), landing_block_y)
+        block_body_def.position = b2.b2Vec2(initial_wall_offset + (i * (block_separation + landing_block_width)), landing_block_y)
         
         block_body = self.world.CreateBody(block_body_def)
         block_shape = b2.b2PolygonShape()
         block_shape.SetAsBox(landing_block_width / 2, landing_block_height / 2)
         block_body.CreateFixture(shape=block_shape)
 
-        left_block_x = INITIAL_WALL_OFFSET
-        right_block_x = INITIAL_WALL_OFFSET + block_separation + landing_block_width
+        left_block_x = initial_wall_offset
+        right_block_x = initial_wall_offset + block_separation + landing_block_width
         gap_center_x = (left_block_x + right_block_x) / 2
         gap_center_y = landing_block_y
 
@@ -789,15 +937,15 @@ class ObstacleGeometry():
     
     @property
     def gap_position(self):
-        return self._gap_position / GEOM_SCALE
+        return self._gap_position / self.geom_scale
     
     @property
     def wall_height(self):
-        return self._wall_height / GEOM_SCALE
+        return self._wall_height / self.geom_scale
     
     @property
     def gap_width(self):
-        return self._gap_width / GEOM_SCALE
+        return self._gap_width / self.geom_scale
     
 class Cloud:
     def __init__(self, x, y, world_to_screen, cloud_size=50):

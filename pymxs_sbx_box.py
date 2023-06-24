@@ -23,6 +23,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
+from stable_baselines3.common.callbacks import EvalCallback
 from dm_control.utils import rewards
 # from numba import jit
 
@@ -82,21 +83,37 @@ def create_reward_func(args):
  
 
 # TODO rewrite to use bult in SB methods
-def evaluate_model(model, env, output_path=False):
-  obs = env.reset()
-  done = False
-  simtime = 0
-  with open(output_path, "w") if output_path else nullcontext() as outfile:
-    if outfile:
-      outfile.write("time,x,y,z,u,v,w,qx,qy,qz,qw,p,q,r,alpha,airspeed,elevator,throttle\n")
-    while not done:
-      action, _state = model.predict(obs, deterministic=True)
-      obs, reward, done, info = env.step(action)
-      if outfile:
-        outfile.write(f"{simtime},{env.render('ansi')[1:-1]}\n")
-      simtime += env.dT
+def evaluate_model(model, env, output_path=False, n_episodes=1):
+    print(f"Output path: {output_path}")
 
-  return obs, reward, done, info, simtime
+    total_reward = 0
+    total_steps = 0
+#   with open(output_path, "w") if output_path else nullcontext() as outfile:
+#     if outfile:
+#       outfile.write("episode,time,x,y,z,u,v,w,qx,qy,qz,qw,p,q,r,alpha,airspeed,elevator,throttle\n")
+    for episode in range(n_episodes):
+        obs = env.reset()
+        print(obs)
+        done = False
+        simtime = 0
+        episode_reward = 0
+        episode_steps = 0
+        while not done:
+            action, _state = model.predict(obs, deterministic=True)
+            obs, reward, done, info = env.step(action)
+            # if outfile:
+            #     print(f"calling render: {env.render()}")
+            #     outfile.write(f"{episode},{simtime},{env.render()[1:-1]}\n")
+            simtime += env.dT
+            episode_reward += reward
+            episode_steps += 1
+            total_reward += episode_reward
+            total_steps += episode_steps
+
+    avg_reward = total_reward / n_episodes
+    avg_steps = total_steps / n_episodes
+    return avg_reward, avg_steps
+
 
 if __name__ == "__main__":
   import argparse
@@ -150,9 +167,19 @@ if __name__ == "__main__":
   if args.run_name is None:
     args.run_name = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
-  config_file = args.config_dir + "box_env_config.json"
+    
+  if args.env == "gym_mxs/MXSBox2DLand-v0":
+    config_file = args.config_dir + "box_env_config_land.json"
+    eval_config_file = args.config_dir + "box_env_eval_config_land.json"
+  else:
+    config_file = args.config_dir + "box_env_config.json"
+    eval_config_file = args.config_dir + "box_env_eval_config.json"
+
   with open(config_file) as f:
     env_config = json.load(f)
+
+  with open(eval_config_file) as f:
+    eval_env_config = json.load(f)
 
   # print(env_config)
   
@@ -167,14 +194,14 @@ if __name__ == "__main__":
       os.makedirs(args.directory+"/wandb")
 
   wandb.init(
-    project="pymxs",
+    project="pymxs_land",
     sync_tensorboard=True,
     dir=args.directory,
     save_code=True,
     )
 
-  def make_env():
-    env = gym.make(args.env, training=True, config = env_config, render_mode=args.training_render_mode)
+  def make_env(training = True, config=env_config, render_mode=args.training_render_mode):
+    env = gym.make(args.env, training=True, config = config, render_mode=render_mode)
     # env = Monitor(env, args.directory)
     env= gym.wrappers.TimeLimit(env, max_episode_steps=2000)
     env = MaxAndSkipEnv(env, skip=args.frame_skip)
@@ -184,6 +211,15 @@ if __name__ == "__main__":
     env = make_vec_env(lambda: make_env(), n_envs=args.n_vec_env)
   else:
     env = make_env()
+
+  eval_env = make_vec_env(lambda: make_env(training=False, config=eval_env_config, render_mode=None), n_envs=10)
+
+  eval_log_dir = args.directory+"/eval_logs"
+  os.makedirs(eval_log_dir, exist_ok=True)
+
+  eval_callback = EvalCallback(
+    eval_env, best_model_save_path=eval_log_dir, log_path=eval_log_dir,
+    eval_freq=max(5000 // args.n_vec_env, 1), n_eval_episodes= 50, deterministic=True, render=False)
 
   # env = make_vec_env(lambda: make_env(), n_envs=12)
 
@@ -217,6 +253,7 @@ if __name__ == "__main__":
     hyperparam_args["policy_kwargs"] = policy_kwargs
     
   pprint.pprint(hyperparam_args)
+  pprint.pprint(wandb.config)
   
   ## get aglorithm from args and create arlgorithm object
   algorithm = args.algo
@@ -239,7 +276,7 @@ if __name__ == "__main__":
   model = MlAlg("MlpPolicy", env, verbose=1, tensorboard_log=f"{run_dir}/tensorboard/", **hyperparam_args)
   # model = MlAlg("MlpPolicy", env, verbose=1)
   model_save_freq = args.model_save_freq / args.frame_skip
-  model.learn(total_timesteps=args.steps, callback=WandbCallback(model_save_path=run_dir, verbose=1, model_save_freq=model_save_freq))
+  model.learn(total_timesteps=args.steps, callback=[WandbCallback(model_save_path=run_dir, verbose=1, model_save_freq=model_save_freq), eval_callback])
   # model.learn(total_timesteps=args.steps)
 
   if args.eval:
@@ -261,9 +298,9 @@ if __name__ == "__main__":
     
     
 
-  if args.output or args.plot:
-    output_file = f"{run_dir}/output.csv"
-    evaluate_model(model, env, output_file)
+#   if args.output or args.plot:
+#     output_file = f"{run_dir}/output.csv"
+#     evaluate_model(model, model.get_env(), output_file)
     
   if args.plot:
     subprocess.call(["python", f"{os.path.dirname(os.path.realpath(__file__))}/plotting/unified_plot.py", "-d", args.directory, args.run_name])

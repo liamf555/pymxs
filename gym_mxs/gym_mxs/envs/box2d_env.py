@@ -80,9 +80,9 @@ TAIL_PLANE_PATH="M -8.9838929,0.4470726 C -7.9395132,0.4475726 -7.8954225,0.0758
 class MxsEnvBox2D(MxsEnv):
 
 
-    def __init__(self, render_mode, training, use_lidar=False, acl = False, context = np.array([0.,0.,0.]), config=None, **kwargs):
+    def __init__(self, render_mode, training, use_lidar=False, acl = False, context = np.array([0.,0.,0.]), config=None, output_dir=None):
         self.render_mode = render_mode
-        super().__init__(render_mode= render_mode,**kwargs)
+        super().__init__(render_mode= render_mode)
 
         self.acl_on = acl
 
@@ -107,6 +107,10 @@ class MxsEnvBox2D(MxsEnv):
 
         self.steps = 0
         self.training = training
+
+        if not self.training:
+            self.first_render = True
+            self.episode_counter = 1
 
         self.controls_high = np.array([np.radians(60), 1])
         self.controls_low = np.array([np.radians(-60), 0])
@@ -156,7 +160,7 @@ class MxsEnvBox2D(MxsEnv):
         # print(f"action space: {self.action_space}")
         # breakpoint()
 
-        self.initial_ac_pos = (0, (WINDOW_HEIGHT / 2) / self.scale)
+        self.initial_ac_pos = (0, (self.window_dims[1] / 2) / self.scale)
         self.render_screen = None
         self.clock = None
         self.x_pos_prev = 0
@@ -254,7 +258,7 @@ class MxsEnvBox2D(MxsEnv):
 
         if self.acl_on:
             self.obstacle_config["gap_height"] = [self.context[0], self.obstacle_config["gap_height"][1]]
-            # self.obstacle_config["gap_width"] = [self.context[1], self.obstacle_config["gap_width"][1]]
+            self.obstacle_config["gap_width"] = [self.obstacle_config["gap_width"][0], self.context[1]]
             self.obstacle_config["gap_offset"] = [self.obstacle_config["gap_offset"][0], self.context[1]]
             # wandb.log({
             #     "Gap height mean": self.obstacle_config["gap_height"][0],
@@ -263,6 +267,7 @@ class MxsEnvBox2D(MxsEnv):
             #     })
             wandb.log({
                 "Gap height mean": self.obstacle_config["gap_height"][0],
+                "Gap width SD": self.obstacle_config["gap_width"][1],
                 "Gap offset SD": self.obstacle_config["gap_offset"][1]
                 })
 
@@ -281,6 +286,7 @@ class MxsEnvBox2D(MxsEnv):
         self.wall_i = 0
         self.reset_world()
         observation = self._get_full_obs(observation)
+        self.simtime = 0
 
         
 
@@ -297,6 +303,9 @@ class MxsEnvBox2D(MxsEnv):
 
         if self.render_mode == "human":
             self._render_frame()
+
+        # print(observation, info)
+
         return (observation,info) if not return_info else observation
 
     def step(self, action, return_info=GYM_FLAG):
@@ -678,9 +687,23 @@ class MxsEnvBox2D(MxsEnv):
                 # pass
 
     def render(self):
-        if self.render_mode == "ansi" or self.render_mode == "human":
-            elements = ", ".join([f"{v:.{4}f}" for v in self._get_obs()])
-            return f"[{elements},{self.vehicle.airstate[0]},{self.vehicle.airstate[2]},{self.elevator},{self.throttle}]"
+        if self.render_mode == "ansi" and self.training == False:
+            with open(self.output_path, "w") if self.output_path else nullcontext() as outfile:
+                if self.first_render:
+                    outfile.write("episode,time,x,y,z,u,v,w,qx,qy,qz,qw,p,q,r,alpha,airspeed,elevator,throttle\n")
+                    self.first_render = False
+                elements = ", ".join([f"{v:.{4}f}" for v in self._get_obs()])
+                outfile.write(f"{self.episode_count},{self.simtime},{[{elements},{self.vehicle.airstate[0]},{self.vehicle.airstate[2]},{self.elevator},{self.throttle}][1:-1]}\n")
+                self.simtime += self.dT
+
+
+
+
+
+
+
+
+            # return f"[{elements},{self.vehicle.airstate[0]},{self.vehicle.airstate[2]},{self.elevator},{self.throttle}]"
         
     def _render_frame(self):
         if self.render_screen is None and self.render_mode == "human":
@@ -948,8 +971,8 @@ class ObstacleGeometry():
         # wall_gap_width = random.uniform(MIN_GAP_WIDTH, MAX_GAP_WIDTH)
         # gap_offset = random.uniform(MIN_GAP_OFFSET, MAX_GAP_OFFSET)
         gap_height = max(0.4, random.normal(self.gap_height_params[0], self.gap_height_params[1]))
-        # wall_gap_width = max(0.01,random.normal(self.gap_width_params[0], self.gap_width_params[1]))
-        wall_gap_width = self.gap_width_params[0]
+        wall_gap_width = max(0.1,random.normal(self.gap_width_params[0], self.gap_width_params[1]))
+        # wall_gap_width = self.gap_width_params[0]
         gap_offset = random.normal(self.gap_offset_params[0], self.gap_offset_params[1])
         # gap_height = random.uniform(self.gap_height_params[0], self.gap_height_params[1]) * GEOM_SCALE
         # wall_gap_width = random.uniform(self.gap_width_params[0], self.gap_width_params[1]) * GEOM_SCALE

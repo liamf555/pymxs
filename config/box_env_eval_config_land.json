@@ -1,20 +1,28 @@
 {
     "obstacles": {
         "max_wall_height": 75,
-        "n_obstacle_walls": 8,
         "gap_height": [
             2,
             0.4
         ],
         "wall_distance": 30,
         "gap_width": [
-            2,
-            0.1
+            2
         ],
         "first_wall_distance": 30,
         "gap_offset": [
             0,
             5
+        ],
+        "initial_wall_offset": 20,
+        "block_width": 30,
+        "block_height": [
+            5,
+            20
+        ],
+        "block_separation": [
+            5,
+            25
         ]
     },
     "lidars": {
@@ -26,28 +34,27 @@
         "lidar_range": 50
     },
     "geometry": {
-        "geom_scale": 8.0935
+        "geom_scale": 8.0935,
+        "aircraft_alt": 25
     },
     "rendering": {
         "window_width": 1200,
         "window_height": 900,
-        "scale": 4
+        "scale": 2
     },
     "reward": {
         "k1": 1.0,
-        "penalisation": -5000
+        "k2": 0.25,
+        "penalisation": -1000
     },
     "domain": {
         "steady": [
             0,
             0
         ],
-        "dryden": "light",
+        "dryden": "none",
         "airspeed": [
-            15,
-            17.5,
-            20,
-            22.5
+            15
         ]
     }
 }

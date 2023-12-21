@@ -36,7 +36,7 @@ from scipy.spatial.transform import Rotation
 
 
 parser = argparse.ArgumentParser(description='Load trained model and plot results')
-parser.add_argument('--dir_path', type=Path)
+parser.add_argument('-d', '--dir_path', type=Path)
 parser.add_argument('--render_mode', type = str, default='ansi')
 args= parser.parse_args()
 
@@ -72,7 +72,9 @@ MlAlg = get_alg(algorithm)
 print(f"Config: {metadata}")
 print(f"Config: {env_config}")
 
-env = gym.make(metadata.env, training=False, config = env_config, render_mode=args.render_mode)
+output_dir = dir_path / 'output'
+
+env = gym.make(metadata.env, training=False, config = env_config, render_mode=args.render_mode, output_dir=output_dir)
 
 model = MlAlg.load(dir_path / 'model.zip', env=env)
 
@@ -81,6 +83,39 @@ episode_rewards, episode_lengths = evaluate_policy(model, env, n_eval_episodes=1
 
 print(f"mean_reward:{np.mean(episode_rewards):.2f} +/- {np.std(episode_rewards)}")
 print(f"mean_length:{np.mean(episode_lengths):.2f} +/- {np.std(episode_lengths)}")
+
+def evaluate_model(model, env, output_path=False, n_episodes=1):
+    print(f"Output path: {output_path}")
+
+    total_reward = 0
+    total_steps = 0
+#   with open(output_path, "w") if output_path else nullcontext() as outfile:
+#     if outfile:
+#       outfile.write("episode,time,x,y,z,u,v,w,qx,qy,qz,qw,p,q,r,alpha,airspeed,elevator,throttle\n")
+    for episode in range(n_episodes):
+        obs = env.reset()
+        print(obs)
+        done = False
+        simtime = 0
+        episode_reward = 0
+        episode_steps = 0
+        while not done:
+            action, _state = model.predict(obs, deterministic=True)
+            obs, reward, done, info = env.step(action)
+            if outfile:
+                print(f"calling render: {env.render()}")
+                outfile.write(f"{episode},{simtime},{env.render()[1:-1]}\n")
+            simtime += env.dT
+            episode_reward += reward
+            episode_steps += 1
+            total_reward += episode_reward
+            total_steps += episode_steps
+
+    avg_reward = total_reward / n_episodes
+    avg_steps = total_steps / n_episodes
+    return avg_reward, avg_steps
+
+
 
 # from stable_baselines3.common.vec_env import VecVideoRecorder, DummyVecEnv
 

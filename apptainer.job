@@ -1,0 +1,44 @@
+#!/bin/bash
+
+## Set job name
+#SBATCH --job-name=pymxs_sbx
+
+#SBATCH --mail-user liam.fletcher@bristol.ac.uk
+
+## Run with one node and 8 cores per job
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --partition gpu
+##SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --account=aero012704
+## Run with a maximum of 48h walltime
+#SBATCH --time=0-48:00:00
+#SBATCH --array=0-4
+
+JOB_NID=${SLURM_JOBID}-${SLURM_ARRAY_TASK_ID}
+
+# Change to workdir and print
+cd $SLURM_SUBMIT_DIR
+echo "Current working_directory: $PWD"
+
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
+# JOB_NID=${SLURM_JOBID}-${SLURM_ARRAY_TASK_ID}
+
+export WANDB_MODE=run
+
+module load apps/singularity
+singularity exec --nv \
+-B /user/work/tu18537:/user/work/tu18537 \
+-B /user/work/tu18537/pymxs_sbx/pymxs:/app \
+pymxs_sbx.sif \
+python3 /app/pymxs_sbx_box_bp.py \
+    --algo droq \
+    --training_render_mode ansi \
+    --frame_skip 10 \
+    --gradient_steps 20 \
+    --env "gym_mxs/MXSBox2DLand-v0" \
+    -o \
+    --n_vec_env 1 \
+    -s 2500000 \
+    -d /user/work/tu18537/runs

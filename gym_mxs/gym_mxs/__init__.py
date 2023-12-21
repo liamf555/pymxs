@@ -24,6 +24,6 @@ register(
 register(
     id="gym_mxs/MXSBox2DLand-v0",
     entry_point="gym_mxs.envs:MxsEnvBox2DLand",
-    max_episode_steps=2000,
+    max_episode_steps=20000,
 )
 

@@ -84,6 +84,8 @@ class MxsEnvBox2D(MxsEnv):
         self.render_mode = render_mode
         super().__init__(render_mode= render_mode)
 
+        self.output_dir = output_dir
+
         self.acl_on = acl
 
         self.config = config
@@ -110,6 +112,7 @@ class MxsEnvBox2D(MxsEnv):
 
         if not self.training:
             self.first_render = True
+            print(f"first render: {self.first_render}")
             self.episode_counter = 1
 
         self.controls_high = np.array([np.radians(60), 1])
@@ -687,17 +690,15 @@ class MxsEnvBox2D(MxsEnv):
                 # pass
 
     def render(self):
+        print("Rendering")
         if self.render_mode == "ansi" and self.training == False:
-            with open(self.output_path, "w") if self.output_path else nullcontext() as outfile:
+            with open(f"{self.output_dir}.csv", "a") if self.output_dir else nullcontext() as outfile:
                 if self.first_render:
                     outfile.write("episode,time,x,y,z,u,v,w,qx,qy,qz,qw,p,q,r,alpha,airspeed,elevator,throttle\n")
                     self.first_render = False
                 elements = ", ".join([f"{v:.{4}f}" for v in self._get_obs()])
-                outfile.write(f"{self.episode_count},{self.simtime},{[{elements},{self.vehicle.airstate[0]},{self.vehicle.airstate[2]},{self.elevator},{self.throttle}][1:-1]}\n")
+                outfile.write(f"{self.episode_counter},{self.simtime},{elements,self.vehicle.airstate[0],self.vehicle.airstate[2],self.elevator,self.throttle}[1:-1]\n")
                 self.simtime += self.dT
-
-
-
 
 
 

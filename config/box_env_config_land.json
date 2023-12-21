@@ -21,8 +21,8 @@
             20
         ],
         "block_separation": [
-            5,
-            25
+            15,
+            35
         ]
     },
     "lidars": {
@@ -52,7 +52,7 @@
             0,
             0
         ],
-        "dryden": "none",
+        "dryden": "light",
         "airspeed": [
             15
         ]

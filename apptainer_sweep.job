@@ -1,0 +1,36 @@
+#!/bin/bash
+
+## Set job name
+#SBATCH --job-name=pymxs_sweep
+
+#SBATCH --mail-user liam.fletcher@bristol.ac.uk
+
+## Run with one node and 8 cores per job
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --partition gpu
+##SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --account=aero012704
+## Run with a maximum of 48h walltime
+#SBATCH --time=5-00:00:00
+#SBATCH --array=0-9
+
+JOB_NID=${SLURM_JOBID}-${SLURM_ARRAY_TASK_ID}
+
+# Change to workdir and print
+cd $SLURM_SUBMIT_DIR
+echo "Current working_directory: $PWD"
+
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
+# JOB_NID=${SLURM_JOBID}-${SLURM_ARRAY_TASK_ID}
+
+export WANDB_MODE=run
+
+module load apps/singularity
+singularity exec --nv \
+-B /user/work/$(whoami):/user/work/$(whoami) \
+-B /user/work/tu18537/pymxs_sbx/pymxs:/app \
+-B /user/work/tu18537/pymxs_sbx/pymxs/sb_optim:/app \
+pymxs_sbx.sif \
+wandb agent tu18537/pymxs/c8ubhhbb

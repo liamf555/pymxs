@@ -1,6 +1,6 @@
 import math
 from matplotlib.path import Path
-import random
+from numpy import random as random
 try:
     import gymnasium as gym
     from gymnasium import spaces
@@ -21,6 +21,8 @@ sys.path.insert(1, '/home/tu18537/dev/mxs/pymxs/models')
 
 from pyaerso import AffectedBody, AeroBody, Body
 from gym_mxs.model import Combined, calc_state, inertia, trim_points
+from gym_mxs.wind import DrydenGustModel
+
 
 from scipy.spatial.transform import Rotation
 
@@ -80,12 +82,11 @@ class MxsEnvBox2DLand(MxsEnv):
 
         self.middle_y = (self.window_dims[1] / 2) / self.scale
         
-        self.steps = 0
         self.training = training
 
         if not self.training:
             self.first_render = True
-            self.episode_counter = 1
+            self.episode_counter = 0
 
         self.controls_high = np.array([np.radians(60), 1])
         self.controls_low = np.array([np.radians(-60), 0])
@@ -94,8 +95,11 @@ class MxsEnvBox2DLand(MxsEnv):
         self.wall_counter = 0
         self.alt_counter = 0
         self.speed_counter = 0
+        self.land_counter = 0
         self.pitch_counter = 0
         self.position_counter = 0
+        self.n_episodes = 0
+        self.steps = 0
 
         self.reward_state = None
 
@@ -131,14 +135,69 @@ class MxsEnvBox2DLand(MxsEnv):
         # print(f"action space: {self.action_space}")
         # breakpoint()
 
+        self._gust_vector = np.zeros((2,3))
+        self.steady_vector = np.zeros(3)
+        self.wind_i = 0
+
         self.initial_ac_pos = (0, (self.window_dims[1] / 2) / self.scale)
         self.render_screen = None
         self.clock = None
         self.x_pos_prev = 0
         self.last_obstacle_x = 0
         self.termination = False
-        self.n_episodes = 0
 
+    def _get_obs(self):
+        return np.array(self.vehicle.statevector)
+    
+    def _reset_aircraft_initial_state(self):
+
+        if self.config["domain"]["airspeed"] is not None or not all(v == 0 for v in self.config["domain"]["airspeed"]):
+            if len(self.config["domain"]["airspeed"])> 1:                
+                self.selected_trim_point = np.random.choice(self.config["domain"]["airspeed"])
+            elif len(self.config["domain"]["airspeed"])== 1:
+                self.selected_trim_point = self.config["domain"]["airspeed"][0]
+        else:
+            self.selected_trim_point = 15
+
+        # print(f"selected trim point: {self.selected_trim_point}")
+
+        alpha = np.radians(trim_points[self.selected_trim_point][0])
+
+        if self.config["domain"]["steady"] is not None or all(v != 0 for v in self.config["domain"]["steady"]):
+            if len(self.config["domain"]["steady"])> 1:
+                self.steady_vector = np.array([np.random.uniform(self.config["domain"]["steady"][0], self.config["domain"]["steady"][1]), 0, 0])
+            elif len(self.config["domain"]["steady"])== 1:
+                self.steady_vector = np.array([self.config["domain"]["steady"][0], 0, 0])
+       
+        mass = 1.221
+        # print(f"steady vector: {self.steady_vector}")
+        position,velocity,attitude,rates = calc_state(
+            alpha,
+            self.selected_trim_point,
+            self.steady_vector, 
+            False
+        ) 
+
+        self.initial_state = [position,velocity,attitude,rates]
+
+        body = Body(mass,inertia,*self.initial_state)
+
+        if self.config["domain"]["dryden"] is not None:
+            # print("dryden")
+            self.wind_i = 0
+            self.gust_model = DrydenGustModel(V_a=self.selected_trim_point, dt = self.dT, intensity=self.config["domain"]["dryden"])
+            self.gust_model.simulate()
+            self.gust_vector = self.gust_model.vel_lin
+        else: 
+            self.gust_vector = np.zeros((2,3))
+        
+    # vehicle = AffectedBody(aerobody,[Lift(),Drag(),Moment()])
+        if self.config["domain"]["dryden"] is not None or (self.config["domain"]["steady"] is not None or all(v != 0 for v in self.config["domain"]["steady"])):
+            # print("wind")
+            aerobody = AeroBody(body, self.create_WindModel())
+        else:
+            aerobody = AeroBody(body)
+        self.vehicle = AffectedBody(aerobody,[Combined(self.dT)])
 
     
     def _get_full_obs(self, obs):
@@ -269,27 +328,14 @@ class MxsEnvBox2DLand(MxsEnv):
         obstacle_centre_x = self.calc_gap_position_delta()
         gap_width = self.gap_width
 
-        pitch_error_degrees = abs(pitch_degrees)  
+        pitch_error_degrees = pitch_degrees
         alt_error = abs(alt) 
         x_error = obstacle_centre_x  
         velocity_error = np.sqrt(u_vel**2 + w_vel**2)
 
-        # print(f"obstacle_centre_x: {obstacle_centre_x}")
-        # print(f"alt_error: {alt_error}")
-        # print(f"velocity_error: {velocity_error}")
-        # print(f"x_error: {x_error}")
-        # print(f"pitch_error_degrees: {pitch_error_degrees}")
-
-        # print(f"Pitch error: {pitch_error_degrees}")
-        # print(f"Alt error: {alt_error}")
-
-        # print(f"X error: {obstacle_centre_x}")
-        # print(f"Velocity error: {velocity_error}")
-        # print(obstacle_centre_x)
-        # print(alt_error)
         reward = 0
         shaping = (
-            - 100 * np.sqrt(obstacle_centre_x**2  + alt_error**2)
+            # - 100 * np.sqrt(obstacle_centre_x**2  + alt_error**2)
             - 10 * velocity_error
         )
 
@@ -306,27 +352,23 @@ class MxsEnvBox2DLand(MxsEnv):
         pitch_r = 0
 
         # minimise throttle? or maybe time? 
-        if alt < 0.1:
-            self.termination = True
-            reward = -5000
-            if (gap_min < x_pos < gap_max):
-                # print("Success")
-                self.completion_counter += 1
-                self.success = True
-            
-                pos_r = rewards.tolerance(x_error, bounds=(0, 0.5), margin=2)
-                vel_r = rewards.tolerance(velocity_error, bounds=(0, 2.5), margin=20)
-                pitch_r = rewards.tolerance(pitch_error_degrees, bounds=(0, 5), margin=90)
-                # alt_r = rewards.tolerance(alt_error, bounds=(0, 1), margin=10)
+                # pos_r = rewards.tolerance(x_error, bounds=(0, 1), margin=30)
+                # vel_r = rewards.tolerance(velocity_error, bounds=(0, 2.5), margin=15)
+                # pitch_r = rewards.tolerance(pitch_error_degrees, bounds=(0, 5), margin=90)
+                # # alt_r = rewards.tolerance(alt_error, bounds=(0, 1), margin=10)
 
-                reward = (pos_r * vel_r * pitch_r) * 10000
-                final_reward = reward
+                # reward = (vel_r * pitch_r * pos_r) * 10000
+                # final_reward = reward
 
         if self.game_over():
             # print("Hit wall")
             reward = - 5000
             self.termination = True
             self.wall_counter += 1
+
+        if alt < 0.25:
+            self.termination = True
+            self.land_counter += 1
 
         if abs(pitch_degrees) > 180:
             # print("Too pitchy")
@@ -339,7 +381,7 @@ class MxsEnvBox2DLand(MxsEnv):
             reward = -5000
             self.termination = True
             self.speed_counter += 1
-        if alt > (self.aircraft_alt /self.geom_scale) + 25:
+        if alt > (self.aircraft_alt /self.geom_scale) + 15:
             # print("Too high or too far")
             reward = -5000
             self.termination = True
@@ -349,35 +391,65 @@ class MxsEnvBox2DLand(MxsEnv):
             reward = -5000
             self.termination = True
             self.position_counter += 1
+        if x_pos < -20:
+            reward = -5000
+            self.termination = True
+            self.position_counter += 1
 
-        if self.termination and self.training:
+
+        if self.termination:
+
+            if gap_min < x_pos < gap_max:
+                if alt < 0.1:
+                    if abs(pitch_error_degrees) < 15:
+                        if velocity_error < 5:
+                            self.completion_counter += 1
+
+            pos_r = rewards.tolerance(x_error, bounds=(0, 0.5), margin=30)
+            vel_r = rewards.tolerance(velocity_error, bounds=(0, 2.5), margin=15)
+            pitch_r = rewards.tolerance(pitch_error_degrees, bounds=(0, 5), margin=90)
+            alt_r = rewards.tolerance(alt_error, bounds=(0, 0.5), margin=25)
+
+            reward += ((vel_r * pitch_r * pos_r * alt_r) * 10000) 
+            final_reward = reward
+
+            self.n_episodes += 1
             # print(pitch_degrees)
-            wandb.log({"Terminal position": x_pos})
-            wandb.log({"Terminal velocity": velocity_error})
-            wandb.log({"Terminal pitch": pitch_degrees})
-            wandb.log({"Terminal distance to centre": x_error})
-            wandb.log({"Wall counter": self.wall_counter})
-            wandb.log({"Pitch counter": self.pitch_counter})
-            wandb.log({"Speed counter": self.speed_counter})
-            wandb.log({"Alt counter": self.alt_counter})
-            wandb.log({"Position counter": self.position_counter})
-            wandb.log({"Completion counter": self.completion_counter})
-            wandb.log({"Final reward": final_reward})
-            wandb.log({"Position reward": pos_r})
-            wandb.log({"Velocity reward": vel_r})
-            wandb.log({"Pitch reward": pitch_r})
+            # wandb.log({"Terminal position": x_pos})
+            # wandb.log({"Terminal velocity": velocity_error})
+            # wandb.log({"Terminal pitch": pitch_degrees})
+            # wandb.log({"Terminal distance to centre": x_error})
+            # wandb.log({"Wall counter": self.wall_counter})
+            # wandb.log({"Pitch counter": self.pitch_counter})
+            # wandb.log({"Speed counter": self.speed_counter})
+            # wandb.log({"Alt counter": self.alt_counter})
+            # wandb.log({"Position counter": self.position_counter})
+            # wandb.log({"Completion counter": self.completion_counter})
+            # wandb.log({"Final reward": final_reward})
+            # wandb.log({"Position reward": pos_r})
+            # wandb.log({"Velocity reward": vel_r})
+            # wandb.log({"Pitch reward": pitch_r})
+            wandb.log({
+                "n_episodes": self.n_episodes,
+                "Terminal position": x_pos,
+                "Terminal velocity": velocity_error,
+                "Terminal pitch": pitch_degrees,
+                "Terminal alt": alt,
+                "Terminal distance to centre": x_error,
+                "Wall counter": self.wall_counter,
+                "Pitch counter": self.pitch_counter,
+                "Speed counter": self.speed_counter,
+                "Land counter": self.land_counter,
+                "Alt counter": self.alt_counter,
+                "Position counter": self.position_counter,
+                "Completion counter": self.completion_counter,
+                "Final reward": final_reward,
+                "Position reward": pos_r,
+                "Velocity reward": vel_r,
+                "Pitch reward": pitch_r,
+                "Alt reward": alt_r
+            })
 
-           
-        # if reward < 0:
-            # print(obs)
-            # # print(f"altitude: {alt}")
-            # # print(f"alt error: {desired_alt - alt}")
-            # print(f" x pos: {x_pos}")
-            # print(f" x pos prev: {x_pos_prev}")
-            # print(f"reward: {reward}")
-            # print(f"rw_1: {rw_1}")
-            # print(f"rw2: {rw2}")
-        
         return reward
     
     def draw_world(self):
@@ -480,16 +552,22 @@ class MxsEnvBox2DLand(MxsEnv):
             *self.initial_state[3]
         ]
 
+        self._reset_aircraft_initial_state()
+
         self.elevator = np.radians(trim_points[self.selected_trim_point][1])
         self.throttle = trim_points[self.selected_trim_point][2]
 
         observation = self._get_obs()
 
+        self.episode_reward = 0
+
         self.aircraft_initial_angle = self.get_pitch(*self.initial_state[2])
         self.aircraft_initial_velocity = self.get_velocity(observation)[0]
+
         self.wall_i = 0
         self.reset_world()
         observation = self._get_full_obs(observation)
+        self.simtime = 0
 
         self.steps = 0
         self.reward_state = None
@@ -504,9 +582,11 @@ class MxsEnvBox2DLand(MxsEnv):
 
         if self.render_mode == "human":
             self._render_frame()
+
         return (observation,info) if not return_info else observation
  
     def step(self, action):
+        self.steps += 1
         # print(f"action: {action}")
 
         controls = self.action_mapper(
@@ -546,12 +626,25 @@ class MxsEnvBox2DLand(MxsEnv):
         # print(f"box2d vel: {self.aircraft.linear_velocity}")
         # print(linear_velocities[0]/GEOM_SCALE)
         self.pitch = math.degrees(self.get_pitch(*observation[6:10]))
-        if abs(np.degrees(self.aircraft.angle)) > 360:
-            print(f"pitch: {np.degrees(self.aircraft.angle)}")
-            print(f"pitch 2 {self.pitch}")
+        # if abs(np.degrees(self.aircraft.angle)) > 360:
+        #     print(f"pitch: {np.degrees(self.aircraft.angle)}")
+        #     print(f"pitch 2 {self.pitch}")
 
+        ep_crash = False
         if self.use_lidar:
-            self.update_lidar()
+            try:
+                self.update_lidar()
+            except AssertionError as e:
+                    print("Lidar error")
+                    info = {"success": False}
+                    observation = self._get_full_obs(observation)
+                    reward = -5000
+                    done = True
+                    if GYM_FLAG:
+                        return observation, reward, done, info
+                    else:
+                        return observation, reward, done, False, {}
+
 
         observation = self._get_full_obs(observation)
         # print(f"observation: {observation}")

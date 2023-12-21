@@ -1,0 +1,39 @@
+# for droq
+program: pymxs_sbx_box_sweep_bp.py
+method: bayes
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "-d"
+  - "/user/work/tu18537/runs"
+  - ${args}
+metric:
+  name: rollout/ep_rew_mean
+  goal: maximize
+parameters:
+  algo:
+    value: "droq"
+  env:
+    value: "gym_mxs/MXSBox2DLidar-v0"
+  gamma:
+    values: [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999]
+  learning_rate:
+    min: 0.00001
+    max: 0.01
+  batch_size:
+    values: [16, 32, 64, 128, 256, 512, 1024, 2048]
+  buffer_size:
+    values: [10000, 100000, 1000000]
+  learning_starts:
+    values: [0, 1000, 10000, 20000]
+  tau:
+    values: [0.001, 0.005, 0.01, 0.02, 0.05, 0.08]
+  top_quantiles_to_drop_per_net:
+    values: [0, 1, 2, 5]
+  gradient_steps:
+    values: [1, 8, 10, 20, 32, 64, 128, 256]
+  dropout_rate:
+    values: [0.0001, 0.001, 0.01]
+  net_arch:
+    values: ["small", "medium", "big"]

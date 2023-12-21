@@ -47,4 +47,4 @@ From: nvidia/cuda:11.8.0-devel-ubuntu20.04
 
 %runscript
   #!/usr/bin/env bash
-  exec /app/train.sh
+  exec python3 /app/pymxs_sbx_box.py $@

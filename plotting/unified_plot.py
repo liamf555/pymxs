@@ -1,5 +1,6 @@
 import os
 import json
+from matplotlib import patches
 
 import pandas
 import matplotlib.pyplot as plt
@@ -78,59 +79,6 @@ def get_eulerized(data):
         euler_df = data
     return euler_df
 
-def plot_vehicle(ax, data, data_eul):
-    last_pos = [10_000, 10_000]
-    for i in range(len(data.index)):
-        if i % 10 != 0:
-            continue
-        deltaPos = np.hypot(last_pos[0] - data.x[i], last_pos[1] - data.z[i])
-        if deltaPos < 0.5:
-            continue
-        draw_vehicle(ax, data.x[i], -data.z[i], np.radians(data_eul.pitch[i]), data.elevator[i])
-        last_pos = [data.x[i], data.z[i]]
-
-def plot_data(data, data_eul, fmt="", pathax=None, traceaxs=None):
-    if pathax is None:
-        plt.figure()
-        pathax = plt.axes()
-        plt.minorticks_on()
-        plt.grid(True, 'both')
-        plt.xlabel('x-position')
-        plt.ylabel('z-position (inverted)')
-        plt.axis('equal')
-
-    pathax.plot(data.x, -data.z, fmt)
-    plot_vehicle(pathax, data, data_eul)
-
-    if traceaxs is None:
-        fig, traceaxs = plt.subplots(6,1, sharex=True)
-        traceaxs[-1].set_xlabel('Time (s)')
-        traceaxs[-1].set_xlim(0.0, None)
-
-        fig.set_size_inches(6, 6)
-        fig.align_ylabels()
-        fig.tight_layout()
-
-    ylabel_common_args = {
-        "rotation": "horizontal",
-        "horizontalalignment": "right",
-    }
-
-    def plot_against_time(axis, ydata, label):
-        traceaxs[axis].plot(data.time, ydata, fmt)
-        traceaxs[axis].set_ylabel(label, **ylabel_common_args)
-        traceaxs[axis].minorticks_on()
-        traceaxs[axis].grid(True, "both")
-
-    plot_against_time(0, -data.z, "Height (m)")
-    plot_against_time(1, data_eul.pitch, "Pitch Angle (deg)")
-    plot_against_time(2, np.degrees(data.alpha), "Alpha (deg)")
-    plot_against_time(3, np.hypot(data.u, data.w), "Airspeed (m/s)")
-    plot_against_time(4, np.degrees(data.elevator), "Elevator (deg)")
-    plot_against_time(5, data.throttle, "Throttle (frac)")
-
-    return pathax, traceaxs
-
 if __name__ == "__main__":
     import argparse
 
@@ -138,32 +86,17 @@ if __name__ == "__main__":
     parser.add_argument("run_name", help="Name of run")
     parser.add_argument("-d", "--directory", help="Directory for runs", default="./runs")
     parser.add_argument("--save", action="store_true", help="Save the output plots")
-    parser.add_argument("--multi-manoeuvre", help="Manoeuvre names for multi-manoeuvre run")
+    parser.add_argument("--env", help="Show the output plots", default="obstacles")
 
     args = parser.parse_args()
 
     run_dir = os.path.join(args.directory, args.run_name)
 
-    if args.multi_manoeuvre:
-        manoeuvres = args.multi_manoeuvre.split(",")
-        formats = ["-k", "--r"]
-        pathax = None
-        tracesaxs = None
-        maxtime = 0
-        for (i, manoeuvre) in enumerate(manoeuvres):
-            data = pandas.read_csv(
-                os.path.join(run_dir, f"output.{manoeuvre}.csv")
-            )
-            data_eul = get_eulerized(data)
-            pathax, tracesaxs = plot_data(data, data_eul, formats[i], pathax, tracesaxs)
-            maxtime = max(maxtime, data.time.max())
-        pathax.legend(manoeuvres)
-        tracesaxs[-1].legend(manoeuvres)
-        tracesaxs[0].set_xlim(0.0, maxtime)
-        plt.show()
-        exit()
-
     data = pandas.read_csv(os.path.join(run_dir, "output.csv"))
+
+    if args.env == "land":
+        # shift y values up by 25
+        data.z = data.z - 25
 
     data_eul = get_eulerized(data)
 
@@ -173,69 +106,133 @@ if __name__ == "__main__":
     plt.minorticks_on()
     plt.grid(True, 'both')
 
-    plt.plot(data.x, -data.z)
-    plt.xlabel('x-position')
-    plt.ylabel('z-position (inverted)')
-    plt.axis('equal')
+    # Get the unique episode numbers
+    episodes = data.iloc[:, 0].unique()
 
-    ax = plt.gca()
-    last_pos = [10_000, 10_000]
-    for i in range(len(data.index)):
-        if i % 10 != 0:
-            continue
-        deltaPos = np.hypot(last_pos[0] - data.x[i], last_pos[1] - data.z[i])
-        if deltaPos < 0.5:
-            continue
-        draw_vehicle(ax, data.x[i], -data.z[i], np.radians(data_eul.pitch[i]), data.elevator[i])
-        last_pos = [data.x[i], data.z[i]]
+    # create counter of successful episodes
+    success_counter = 0
 
-    if "waypoints" in metadata:
-        plt.scatter(
-            list(map(lambda p: p[0],metadata["waypoints"])),
-            list(map(lambda p: -p[1],metadata["waypoints"]))
-        )
+    # First, calculate success for all episodes
+    episode_success = {}
+    for i in range(len(episodes)-1):
+        episode = episodes[i]
+        next_episode = episodes[i+1]
+        next_episode_data = data[data.iloc[:, 0] == next_episode]
+        success = next_episode_data.iloc[0, -1]
+        episode_success[episode] = success
+        if success == 1:
+            success_counter += 1
 
-    plt.tight_layout()
-    position_fig = plt.gcf()
+    # Now plot every 5th episode using the pre-calculated success values
+    for i in range(0, len(episodes)-1, 1):
+        episode = episodes[i]
+        episode_data = data[data.iloc[:, 0] == episode]
+        
+        success = episode_success.get(episode, 0)  # Get pre-calculated success value
+        color = 'g' if success else 'r'
+        # line is solid if successful, dashed if not
+        line_style = '-' if success else '--'
 
-    # plt.figure()
-    fig, ax = plt.subplots(6,1, sharex=True)
+        # plt.plot(episode_data.x, -episode_data.z, color=color, linewidth=1.0, linestyle=line_style)
+        episode_data_eul = get_eulerized(episode_data)
+
+         # draw vehicle at every 10th point
+        for i in range(len(episode_data.index)):
+            if i % 10 != 0:
+                continue
+            draw_vehicle(plt.gca(), episode_data.x.iloc[i], -episode_data.z.iloc[i], np.radians(episode_data_eul.pitch.iloc[i]), episode_data.elevator.iloc[i])
+            print(f"x = {episode_data.x.iloc[i]}, z = {episode_data.z.iloc[i]}, pitch = {episode_data_eul.pitch.iloc[i]}, elevator = {episode_data.elevator.iloc[i]}")
+        plt.ylim([0, None])
+
+    # Print success rate
+    print(f"Success rate: {success_counter}")
+
+    if args.env == "obstacles":
+        plt.gcf().set_size_inches(12, 6)
+        # Draw vertical lines
+        start_x = data.x.min()  # Starting x position
+        first_wall = 30
+        start_x = first_wall + start_x
+        line_distance = 30  # Distance between lines
+        num_lines = 8  # Number of lines
+
+        for i in range(num_lines):
+            line_x = start_x + i * line_distance
+            plt.axvline(x=line_x, color='b', linestyle='--')
+
+            plt.xlabel('x-Position (m)', fontsize=14)  # Increase label font size
+            plt.ylabel('z-Position (m)', fontsize=14)  # Increase label font size
+            plt.xticks(fontsize=12)  # Increase tick numbers font size
+            plt.yticks(fontsize=12)  # Increase tick numbers font size
+            plt.axis('equal')
+
+        ax = plt.gca()
+        last_pos = [10_000, 10_000]
+    else:
+        plt.xlabel('x-Position (m)', fontsize=14)
+        plt.ylabel('Height (m)', fontsize=14)
+        plt.xlim([0, 80])
+        plt.ylim([0, 30])
+
+        gap_centre = 20
+        gap_width = 30
+        block_height = 12.5
+        block_width = 25
+
+        plt.axhline(y=0, color='k', linestyle='-')
+
+        rect_l = patches.Rectangle((gap_centre - block_width/2, 0), block_width, block_height, linewidth=1, edgecolor='k', facecolor='k')
+        rect_r = patches.Rectangle((gap_centre + gap_width + block_width/2, 0), block_width, block_height, linewidth=1, edgecolor='k', facecolor='k')
+        
+        ax = plt.gca()
+        ax.add_patch(rect_l)
+        ax.add_patch(rect_r)
+
+    # save plot if desired
+    if args.save:
+        plt.savefig(f"{run_dir}/trajectory.eps", format="eps", dpi=1200)
+
+    # Create state plots
+    fig2, ax2 = plt.subplots(3, 2, sharex=True)
 
     ylabel_common_args = {
-        "rotation": "horizontal",
-        # "labelpad": None,
-        "horizontalalignment": "right",
+        "fontsize": 12
     }
 
-    def plot_against_time(axis, ydata, label):
-        ax[axis].plot(data.time, ydata, color='k')
-        ax[axis].set_ylabel(label, **ylabel_common_args)
-        ax[axis].minorticks_on()
-        ax[axis].grid(True, "both")
+    def plot_against_time(axis, ydata, label, xdata=data.time, color='k', linestyle='-'):
+        row = axis // 2  # Integer division to get the row
+        col = axis % 2  # Modulo operation to get the column
+        ax2[row, col].plot(xdata, ydata, color=color, linestyle=linestyle)
+        ax2[row, col].set_ylabel(label, **ylabel_common_args)
+        ax2[row, col].grid(True, "both")
 
-    plot_against_time(0, -data.z, "Height (m)")
-    plot_against_time(1, data_eul.pitch, "Pitch Angle (deg)")
-    plot_against_time(2, np.degrees(data.alpha), "Alpha (deg)")
-    plot_against_time(3, np.hypot(data.u, data.w), "Airspeed (m/s)")
-    plot_against_time(4, np.degrees(data.elevator), "Elevator (deg)")
-    plot_against_time(5, data.throttle, "Throttle (frac)")
+    # Plot states for every 5th episode using pre-calculated success values
+    for i in range(0, len(episodes)-1, 1):
+        episode = episodes[i]
+        episode_data = data[data.iloc[:, 0] == episode]
+        episode_data_eul = get_eulerized(episode_data)
 
-    ax[-1].set_xlabel('Time (s)')
-    ax[-1].set_xlim(0.0, None)
+        success = episode_success.get(episode, 0)  # Get pre-calculated success value
+        color = 'g' if success else 'r'
 
-    fig.set_size_inches(6, 6)
-    fig.align_ylabels()
-    fig.tight_layout()
+        # line is solid if successful, dashed if not
+
+
+        plot_against_time(0, -episode_data.z, "Height (m)", episode_data.time, color)
+        plot_against_time(1, episode_data_eul.pitch, "Pitch Angle (deg)", episode_data.time, color)
+        plot_against_time(2, np.degrees(episode_data.alpha), "Alpha (deg)", episode_data.time, color)
+        plot_against_time(3, np.hypot(episode_data.u, episode_data.w), "Airspeed (m/s)", episode_data.time, color)
+        plot_against_time(4, np.degrees(episode_data.elevator), "Elevator (deg)", episode_data.time, color)
+        plot_against_time(5, episode_data.throttle, "Throttle (frac)", episode_data.time, color)
+
+    # Set x-axis labels and limits
+    for axis in ax2.flatten():
+        axis.set_xlabel('Time (s)')
 
     if args.save:
-        state_plot_file = os.path.join(
-            run_dir, f"state_plot_{args.run_name}.eps"
-        )
-        fig.savefig(state_plot_file, format="eps")
+        plt = fig2
+        plt.tight_layout()
+        plt.set_size_inches(10, 6)
+        plt.savefig(f"{run_dir}/states.eps", format="eps", dpi=1200)
 
-        position_plot_file = os.path.join(
-            run_dir, f"position_plot_{args.run_name}.eps"
-        )
-        position_fig.savefig(position_plot_file, format="eps")
-
-    plt.show()
+    # plt.show()
